@@ -102,3 +102,13 @@ int sys_shutdown(void)
   shutdown();
   return 0;
 }
+
+int sys_nicefork(void)
+{
+  return fork(); // Placeholder, currently acts like fork()
+}
+
+int sys_schedlog(void)
+{
+  return 0;   // Temporary
+}
