@@ -344,6 +344,8 @@ scheduler(void)
       c->proc = p;
       switchuvm(p);
       p->state = RUNNING;
+      p->ticks_left = BFS_DEFAULT_QUANTUM;  // ticks_left implementation
+      // p->ticks_done = 0;                    // ticks_done implementation
 
       swtch(&(c->scheduler), p->context);
       switchkvm();
