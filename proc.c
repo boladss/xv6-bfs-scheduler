@@ -86,6 +86,8 @@ allocproc(void)
   return 0;
 
 found:
+  p->virt_deadline = 0; //change this later
+  p->nice = 0; //nice defaults to 0
   p->state = EMBRYO;
   p->pid = nextpid++;
 
