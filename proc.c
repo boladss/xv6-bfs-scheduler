@@ -7,6 +7,65 @@
 #include "proc.h"
 #include "spinlock.h"
 
+typedef struct {
+  int pid; //pid of associated value
+  int virt_deadline; 
+  struct node *next; //points to the next node in the same level
+  struct node *lower; //points to the same node in a lower level
+} node;
+
+typedef struct {
+  struct node *next;
+} headnode;
+
+typedef struct { 
+  //skiplist can only have 4 levels 
+  //so just initialize all 4 levels
+  int length;
+  node head;
+} linkedlist; 
+
+typedef struct {
+  int levels;
+  headnode level[4];
+} skiplist;
+
+node NULL = {-1, -1, 0, 0};
+
+node search(linkedlist *slist, int pid) {
+  return NULL;
+};
+
+void insert(linkedlist *slist, int pid) {
+  //create a new node
+
+  //find where to place it
+};
+
+void delete(linkedlist *slist, int pid) {
+  //for every level
+    //find the node whose next is the pid
+
+    //move pointers as needed
+
+    //dealllocate the detached node
+};
+
+void sort(skiplist *slist) {
+  
+};
+
+/*static skiplist slist = {
+  4, 
+  {
+    {0},
+    {0},
+    {0},
+    {0}
+  }
+}; */
+
+
 struct {
   struct spinlock lock;
   struct proc proc[NPROC];
