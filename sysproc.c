@@ -105,7 +105,13 @@ int sys_shutdown(void)
 
 int sys_nicefork(void)
 {
-  return fork(); // Placeholder, currently acts like fork()
+  int n;
+
+  if ((argint(0, &n) < NICE_FIRST_LEVEL) || (argint(0, &n) > NICE_LAST_LEVEL)) {
+    return -1;
+  }
+
+  return nicefork(n);
 }
 
 int sys_schedlog(void)
