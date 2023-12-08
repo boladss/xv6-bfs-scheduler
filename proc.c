@@ -211,7 +211,7 @@ nicefork(int nice_value)
 
   pid = np->pid;
 
-  np-> nice = nice_value;
+  np->nice = nice_value;   // VERIFY: Should this be added earlier?
 
   acquire(&ptable.lock);
 
