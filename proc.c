@@ -354,11 +354,12 @@ scheduler(void)
       switchuvm(p);
       p->state = RUNNING;
 
+      // Print schedlog details
       if (schedlog_active) {
         if (ticks > schedlog_lasttick) {
           schedlog_active = 0;
         } else {
-          cprintf("%d", ticks);
+          cprintf("%d|", ticks);
 
           struct proc *pp;
           int highest_idx = -1;
@@ -370,11 +371,26 @@ scheduler(void)
             }
           }
 
+          // TEMPORARY VALUES:
+          int temp_maxlevel = 4;
+          int temp_quantum = BFS_DEFAULT_QUANTUM;
+
+          /*
+          CLARIFICATIONS:
+          Based on the example in the Project 1 specs, there's a few ambiguous differences from Lab 5:
+          - Are unused processes not printed at all for the project? (as opposed to `[PID] ---:0`) 
+          - Should there be an indicator for the current process running? (marked with `*` in Lab 5)
+          - Other: maxlevel is not present in the example processes
+          */
+
           for (int k = 0; k <= highest_idx; k++) {
             pp = &ptable.proc[k];
-            if (pp->state == UNUSED) cprintf(" | [%d] ---:0", k);
-            else if (pp->state == RUNNING) cprintf(" | [%d]*%s:%d", k, pp->name, pp->state);
-            else cprintf(" | [%d] %s:%d", k, pp->name, pp->state);
+            if (pp->state == UNUSED) {}
+              //cprintf("[%d]---:0,", k);
+            else if (pp->state == RUNNING)
+              cprintf("[%d]*%s:%d:%d(%d)(%d)(%d),", k, pp->name, pp->state, pp->nice, temp_maxlevel, pp->virt_deadline, temp_quantum);
+            else
+              cprintf("[%d] %s:%d:%d(%d)(%d)(%d),", k, pp->name, pp->state, pp->nice, temp_maxlevel, pp->virt_deadline, temp_quantum);
           }
           cprintf("\n");
         }
