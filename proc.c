@@ -353,6 +353,8 @@ scheduler(void)
       c->proc = p;
       switchuvm(p);
       p->state = RUNNING;
+      p->ticks_left = BFS_DEFAULT_QUANTUM;  // ticks_left implementation
+      // p->ticks_done = 0;                    // ticks_done implementation
 
       // Print schedlog details
       if (schedlog_active) {
@@ -373,13 +375,14 @@ scheduler(void)
 
           // TEMPORARY VALUES:
           int temp_maxlevel = 4;
-          int temp_quantum = BFS_DEFAULT_QUANTUM;
+          // int temp_quantum = BFS_DEFAULT_QUANTUM;
 
           /*
           CLARIFICATIONS:
           Based on the example in the Project 1 specs, there's a few ambiguous differences from Lab 5:
           - Are unused processes not printed at all for the project? (as opposed to `[PID] ---:0`) 
           - Should there be an indicator for the current process running? (marked with `*` in Lab 5)
+          - Does <quantum> refer to ticks left or ticks done?
           - Other: maxlevel is not present in the example processes
           */
 
@@ -388,9 +391,9 @@ scheduler(void)
             if (pp->state == UNUSED) {}
               //cprintf("[%d]---:0,", k);
             else if (pp->state == RUNNING)
-              cprintf("[%d]*%s:%d:%d(%d)(%d)(%d),", k, pp->name, pp->state, pp->nice, temp_maxlevel, pp->virt_deadline, temp_quantum);
+              cprintf("[%d]*%s:%d:%d(%d)(%d)(%d),", k, pp->name, pp->state, pp->nice, temp_maxlevel, pp->virt_deadline, pp->ticks_left);
             else
-              cprintf("[%d] %s:%d:%d(%d)(%d)(%d),", k, pp->name, pp->state, pp->nice, temp_maxlevel, pp->virt_deadline, temp_quantum);
+              cprintf("[%d] %s:%d:%d(%d)(%d)(%d),", k, pp->name, pp->state, pp->nice, temp_maxlevel, pp->virt_deadline, pp->ticks_left);
           }
           cprintf("\n");
         }

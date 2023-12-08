@@ -51,6 +51,8 @@ struct proc {
   char name[16];               // Process name (debugging)
   int virt_deadline;           // Virtual deadline, in ticks
   int nice;                    // nice value
+  int ticks_left;              // Remaining ticks in quantum
+  // int ticks_done            // Ticks done in quantum (just in case)
 };
 
 // Process memory is laid out contiguously, low addresses first:
