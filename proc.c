@@ -4,67 +4,118 @@
 #include "memlayout.h"
 #include "mmu.h"
 #include "x86.h"
-#include "proc.h"
 #include "spinlock.h"
+#include "skiplist.h"
 
-typedef struct {
-  int pid; //pid of associated value
-  int virt_deadline; 
-  struct node *next; //points to the next node in the same level
-  struct node *lower; //points to the same node in a lower level
-} node;
+static int seed = 6969420;
 
-typedef struct {
-  struct node *next;
-} headnode;
+/*struct node pop(skiplist *slist) {
+  struct node *next = slist->level[0].head.next;
+  return *next;
+} 
 
-typedef struct { 
-  //skiplist can only have 4 levels 
-  //so just initialize all 4 levels
-  int length;
-  node head;
-} linkedlist; 
+void update(skiplist ) {
 
-typedef struct {
-  int levels;
-  headnode level[4];
-} skiplist;
+}
 
-node NULL = {-1, -1, 0, 0};
 
-node search(linkedlist *slist, int pid) {
-  return NULL;
-};
-
-void insert(linkedlist *slist, int pid) {
-  //create a new node
-
-  //find where to place it
-};
-
-void delete(linkedlist *slist, int pid) {
-  //for every level
-    //find the node whose next is the pid
-
-    //move pointers as needed
-
-    //dealllocate the detached node
-};
-
-void sort(skiplist *slist) {
+struct node * insertsearch(skiplist *slist, int virt_deadline) {
+  //this search finds where to place a new node
   
+  struct node * curr;
+
+  //start with the topmost level with contents
+  int i = slist->levels - 1;
+  while (slist->level[i].length < 1 && i > 0) {
+    i--;
+  } 
+  curr = slist->level[i].head->next;
+
+  if (curr.virt_deadline ==)
+  
+  return &NULL;
 };
+*/
+
+struct node * searchpid(skiplist *slist, int pid) {
+  //this is exhaustive search
+  //because the skiplist isn't sorted by pid
+  //it's sorted by virtual deadline
+  //so you have to exhaustive search anyway
+
+  //iterate through the levels from top to bottom
+  for(int i = slist->levels - 1; i >= 0; i--) {
+    if (slist->level[i].length < 1) {
+      continue; //current list is empty, so keep goin
+    }
+    struct node *curr = slist->level[i].head;
+    while (curr->next != 0) { //iterate through the list
+      if (curr->proc->pid == pid) {
+        return curr; //return if found
+      }
+    }
+  }
+  return 0; //otherwise, return nothing
+};
+
+unsigned int random(uint max) {
+  seed ^= seed << 17;
+  seed ^= seed >> 7;
+  seed ^= seed << 5;
+  return seed % max;
+}
+
+void insert(skiplist *slist, struct proc *proc) {
+  //idea: iterate through the bottommost level and place it where appropriate there
+  //go through the higher levels and cointoss where appropriate
+  struct node * lower, * curr;
+  int level = 0;
+  const int curr_deadline = proc->virt_deadline;
+
+  while (level < slist->levels) {
+    //note that insertion at level = 0 is guaranteed
+    int rand = random(10000);
+    if (level != 0 && (rand >= 2500) ) {
+      break; //failed the cointoss? no point in going higher
+    }
+
+    //create a new node
+    struct node add = {0, 0, 0, 0};
+    add.proc = proc;
+    if (level != 0) { //if level != 0, also need to set the lower node
+      add.lower = lower;
+    }
+
+    //iterate through the current level to find where to insert
+    curr = slist->level[level].head->next;
+    while (curr->next != 0 && curr->next->proc->virt_deadline < curr_deadline) {
+      curr = curr->next;
+    }
+
+    //insert node
+    slist->level[level].length++;
+    curr->next->prev = &add;
+    add.next = curr->next;
+    add.prev = curr;
+    curr->next = &add;
+
+
+    //prep for next iteration
+    lower = &add;
+    level++;
+  }
+
+}; 
 
 /*static skiplist slist = {
   4, 
   {
-    {0},
-    {0},
-    {0},
-    {0}
+    {0, 0},
+    {0, 0},
+    {0, 0},
+    {0, 0}
   }
 }; */
-
 
 struct {
   struct spinlock lock;
@@ -78,6 +129,15 @@ extern void forkret(void);
 extern void trapret(void);
 
 static void wakeup1(void *chan);
+
+void delete(int pid) {
+  //for every level
+    //find the node whose next is the pid
+
+    //move pointers as needed
+
+    //dealllocate the detached node
+};
 
 void
 pinit(void)
