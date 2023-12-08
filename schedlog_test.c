@@ -6,8 +6,8 @@ int main() {
 
   for (int i = 0; i < 3; i++) {
     if (fork() == 0) {
-      char *argv[] = {"schedlog_loop", 0};
-      exec("schedlog_loop", argv);
+      char *argv[] = {"loop", 0};
+      exec("loop", argv);
     }
   }
 

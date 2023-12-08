@@ -190,7 +190,7 @@ UPROGS=\
 	_wc\
 	_zombie\
 	_shutdown\
-	_schedlog_loop\
+	_loop\
 	_schedlog_test\
 
 
