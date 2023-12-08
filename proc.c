@@ -18,25 +18,6 @@ void update(skiplist ) {
 
 }
 
-
-struct node * insertsearch(skiplist *slist, int virt_deadline) {
-  //this search finds where to place a new node
-  
-  struct node * curr;
-
-  //start with the topmost level with contents
-  int i = slist->levels - 1;
-  while (slist->level[i].length < 1 && i > 0) {
-    i--;
-  } 
-  curr = slist->level[i].head->next;
-
-  if (curr.virt_deadline ==)
-  
-  return &NULL;
-};
-*/
-
 struct node * searchpid(skiplist *slist, int pid) {
   //this is exhaustive search
   //because the skiplist isn't sorted by pid
@@ -56,7 +37,7 @@ struct node * searchpid(skiplist *slist, int pid) {
     }
   }
   return 0; //otherwise, return nothing
-};
+}; */
 
 unsigned int random(uint max) {
   seed ^= seed << 17;
@@ -68,14 +49,13 @@ unsigned int random(uint max) {
 void insert(skiplist *slist, struct proc *proc) {
   //idea: iterate through the bottommost level and place it where appropriate there
   //go through the higher levels and cointoss where appropriate
-  struct node * lower, * curr;
+  struct node * lower;
   int level = 0;
   const int curr_deadline = proc->virt_deadline;
 
   while (level < slist->levels) {
-    //note that insertion at level = 0 is guaranteed
-    int rand = random(10000);
-    if (level != 0 && (rand >= 2500) ) {
+    //roll the dice; level 0 is guaranteed
+    if (level != 0 && random(10000) >= 2500) { //check level first to short the AND check
       break; //failed the cointoss? no point in going higher
     }
 
@@ -87,7 +67,7 @@ void insert(skiplist *slist, struct proc *proc) {
     }
 
     //iterate through the current level to find where to insert
-    curr = slist->level[level].head->next;
+    struct node * curr = slist->level[level].head->next;
     while (curr->next != 0 && curr->next->proc->virt_deadline < curr_deadline) {
       curr = curr->next;
     }
@@ -106,6 +86,41 @@ void insert(skiplist *slist, struct proc *proc) {
   }
 
 }; 
+
+void delete(skiplist *slist, struct proc *proc) {
+  //this is exhaustive search
+  //because the skiplist isn't sorted by pid
+  //it's sorted by virtual deadline
+  //so you have to exhaustive search anyway
+
+  //iterate through the levels from top to bottom
+  struct node *found = 0;
+  for(int i = slist->levels - 1; i >= 0; i--) {
+    if (slist->level[i].length < 1) {
+      continue; //current list is empty, so keep goin
+    }
+    struct node *curr = slist->level[i].head;
+    while (curr->next != 0) { //iterate through the list
+      if (curr->proc == proc) {
+        found = curr;
+        goto found; //return if found
+      }
+    }
+  }
+
+found:
+  if (found != 0) {
+    do {
+      //delete the node
+      found->prev->next = found->next;
+      found->next->prev = found->prev;
+      found = found->lower;
+      //found is now unreferenced... this is a memory leak.
+      //sys_sbrk only accepts positive numbers (see sysproc.c) 
+      //so I have no idea how to deallocate the memory associated with found.
+    } while (found != 0);
+  }
+}
 
 /*static skiplist slist = {
   4, 
@@ -129,15 +144,6 @@ extern void forkret(void);
 extern void trapret(void);
 
 static void wakeup1(void *chan);
-
-void delete(int pid) {
-  //for every level
-    //find the node whose next is the pid
-
-    //move pointers as needed
-
-    //dealllocate the detached node
-};
 
 void
 pinit(void)
