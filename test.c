@@ -25,28 +25,59 @@ struct ptable {
   struct proc proc[NPROC];
 } ptable;
 
-int seed = 6969420;
-int random(unsigned int max) {
+void delete(struct ptable *ptable, struct proc *proc) {
+  const int curr_deadline = proc->virt_deadline;
+
+  //need to perform the proper skiplist search
+  //start with highest head node
+  struct node * curr = ptable->level[LEVELS - 1];
+
+  while (curr->proc != proc) {
+    if (curr->next != 0 && curr_deadline <= curr->next->proc->virt_deadline)
+      curr = curr->next; //go forward until next deadline is bigger than current deadline
+    else if (curr->lower != 0)
+      curr = curr->lower; //go down if can no longer go forward
+    else //bottom of the list, can't go forward or down
+      printf(1, "node set for deletion not found\n"); //shouldn't be in this block if the node can be found
+  }
+
+  //delete the node and all nodes below it
+  do {
+    //remove all references
+    curr->prev->next = curr->next;
+    curr->next->prev = curr->prev;
+
+    //deallocate current node
+    curr->proc = 0; //technically only this has to be set... but might as well do the rest
+    curr->prev = 0;
+    curr->next = 0;
+
+    //iterate to node below current node
+    struct node * temp = curr; //need to store the current node to deallocate ->lower
+    curr = curr->lower; //set curr to lower
+    temp->lower = 0; //then deallocate
+  } while (curr != 0);
+}
+
+
+static uint seed = 6969420;
+unsigned int random(uint max) {
   seed ^= seed << 17;
   seed ^= seed >> 7;
   seed ^= seed << 5;
   return seed % max;
 }
-
 void insert(struct ptable *ptable, struct proc * proc) {
   //idea: iterate through the bottommost level and place it where appropriate there
-  //go through the higher levels and cointoss where appropriate
+  //go up through the levels one-by-one and get rand; if passes random, then do the same for that level
   struct node * lower = 0; //see struct node for void reasoning
   uint level = 0;
-  int rand = 6969420;
   struct proc * p = proc; //need to type narrow proc to get the virtual deadline
   const int curr_deadline = p->virt_deadline;
 
   while (level < LEVELS) {
-    rand = random(10000);
-    printf(1, "PID: %d, LEVEL: %d, RAND: %d\n", proc->pid, level, rand);
     //roll the dice; level 0 is guaranteed
-    if (level != 0 && rand >= 2500) { //check level first to short the AND check
+    if (level != 0 && random(10000) >= 2500) { //check level first to short the AND check
       break; //failed the cointoss? no point in going higher
     }
     //first, find a place in the array to store the struct. just use the first unallocated index
@@ -54,8 +85,8 @@ void insert(struct ptable *ptable, struct proc * proc) {
     do {
       node++; //index 0 is the head node, so just skip it
 
-      /*if (node >= &ptable->level[level][NPROC + 1])
-        panic("not enough memory to store a new value")*/
+      if (node >= &ptable->level[level][NPROC + 1])
+        printf(1, "not enough memory to store a new value\n");
     } while (node->proc != 0);
     node->lower = lower;
     node->proc = proc;

@@ -43,41 +43,6 @@ struct proc * pop(skiplist *slist) {
   struct proc *popped = slist->;
 
 }
-
-void delete(skiplist *slist, struct proc *proc) {
-  //this is exhaustive search
-  //because the skiplist isn't sorted by pid
-  //it's sorted by virtual deadline
-  //so you have to exhaustive search anyway
-
-  //iterate through the levels from top to bottom
-  struct node *found = 0;
-  for(int i = slist->levels - 1; i >= 0; i--) {
-    if (slist->level[i].length < 1) {
-      continue; //current list is empty, so keep goin
-    }
-    struct node *curr = slist->level[i].head;
-    while (curr->next != 0) { //iterate through the list
-      if (curr->proc == proc) {
-        found = curr;
-        goto found; //return if found
-      }
-    }
-  }
-
-found:
-  if (found != 0) {
-    do {
-      //delete the node
-      found->prev->next = found->next;
-      found->next->prev = found->prev;
-      found = found->lower;
-      //found is now unreferenced... this is a memory leak.
-      //sys_sbrk only accepts positive numbers (see sysproc.c) 
-      //so I have no idea how to deallocate the memory associated with found.
-    } while (found != 0);
-  }
-}
  
 struct proc * get(int level, union ptr * node) {
   //higher levels are only pointers,
@@ -95,25 +60,8 @@ struct proc * get(int level, union ptr * node) {
   //there isn't a try-catch block in kernel mode either
   //up to programmer to guarantee this returns the correct pointer
   return p;
-}
- */
 
-struct node {
-  struct node *prev;
-  struct node *next;
-  void * lower;
-  //lower is either struct node ***, struct node **, struct node *, or struct proc *
-  //which increases in asterisks the more levels there are.
-  //easier to just set it to void than create a union
-};
-
-struct ptable {
-  struct spinlock lock;
-  struct node level[LEVELS][NPROC + 1]; //an array of either an array of processes (level 0) or an array of pointers (level 1+)
-  struct proc proc[NPROC];
-} ptable;
-
-struct proc * get(int level, void * node) {
+  struct proc * get(int level, void * node) {
   //higher levels are only pointers,
   //need to go down to the bottom level to access actual content
   struct node * curr = node; //void * can be type narrowed to node *
@@ -131,7 +79,61 @@ struct proc * get(int level, void * node) {
   return p;
 }
 
-/*
+}
+ */
+
+struct node {
+  struct proc *proc;
+  struct node *prev;
+  struct node *next;
+  struct node *lower;
+  //lower is either struct node ***, struct node **, struct node *, or struct proc *
+  //which increases in asterisks the more levels there are.
+  //easier to just set it to void than create a union
+};
+
+struct ptable {
+  struct spinlock lock;
+  struct node level[LEVELS][NPROC + 1]; //an array of either an array of processes (level 0) or an array of pointers (level 1+)
+  struct proc proc[NPROC];
+} ptable;
+
+
+
+void delete(struct ptable *ptable, struct proc *proc) {
+  const int curr_deadline = proc->virt_deadline;
+
+  //need to perform the proper skiplist search
+  //start with highest head node
+  struct node * curr = ptable->level[LEVELS - 1];
+
+  while (curr->proc != proc) {
+    if (curr->next != 0 && curr_deadline <= curr->next->proc->virt_deadline)
+      curr = curr->next; //go forward until next deadline is bigger than current deadline
+    else if (curr->lower != 0)
+      curr = curr->lower; //go down if can no longer go forward
+    else //bottom of the list, can't go forward or down
+      panic("node set for deletion not found\n"); //shouldn't be in this block if the node can be found
+  }
+
+  //delete the node and all nodes below it
+  do {
+    //remove all references
+    curr->prev->next = curr->next;
+    curr->next->prev = curr->prev;
+
+    //deallocate current node
+    curr->proc = 0; //technically only this has to be set... but might as well do the rest
+    curr->prev = 0;
+    curr->next = 0;
+
+    //iterate to node below current node
+    struct node * temp = curr; //need to store the current node to deallocate ->lower
+    curr = curr->lower; //set curr to lower
+    temp->lower = 0; //then deallocate
+  } while (curr != 0);
+}
+
 static int seed = 6969420;
 unsigned int random(uint max) {
   seed ^= seed << 17;
@@ -139,34 +141,47 @@ unsigned int random(uint max) {
   seed ^= seed << 5;
   return seed % max;
 }
-
-void insert(struct ptable *ptable, struct proc *proc) {
+void insert(struct ptable *ptable, struct proc * proc) {
   //idea: iterate through the bottommost level and place it where appropriate there
-  //go through the higher levels and cointoss where appropriate
-  struct proc ** lower = &proc;
+  //go up through the levels one-by-one and get rand; if passes random, then do the same for that level
+  struct node * lower = 0; //see struct node for void reasoning
   uint level = 0;
-  const int curr_deadline = proc->virt_deadline;
+  struct proc * p = proc; //need to type narrow proc to get the virtual deadline
+  const int curr_deadline = p->virt_deadline;
 
   while (level < LEVELS) {
     //roll the dice; level 0 is guaranteed
     if (level != 0 && random(10000) >= 2500) { //check level first to short the AND check
       break; //failed the cointoss? no point in going higher
     }
+    //first, find a place in the array to store the struct. just use the first unallocated index
+    struct node * node = ptable->level[level];
+    do {
+      node++; //index 0 is the head node, so just skip it
+
+      if (node >= &ptable->level[level][NPROC + 1])
+        panic("not enough memory to store a new value\n");
+    } while (node->proc != 0);
+    node->lower = lower;
+    node->proc = proc;
 
     //iterate through the current level to find where to insert
-    struct proc ** curr = ptable->level[level][0];
-    while (curr != 0 && get(level, curr)->virt_deadline < curr_deadline) {
+    struct node * curr = ptable->level[level];
+    while (curr->next != 0 && curr_deadline < curr->proc->virt_deadline) {
       curr++;
     }
 
     //insert node
-    curr = lower;
+    node->prev = curr;
+    node->next = curr->next;
+    curr->next->prev = node;
+    curr->next = node;
 
     //prep for next iteration
-    lower = curr;
+    lower = node; //void can be set to node
     level++;
   }
-};*/
+}
 
 /*static skiplist slist = {
   4, 
