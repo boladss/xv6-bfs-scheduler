@@ -38,47 +38,6 @@ struct node * searchpid(skiplist *slist, int pid) {
   return 0; //otherwise, return nothing
 };
 
-void insert(skiplist *slist, struct proc *proc) {
-  //idea: iterate through the bottommost level and place it where appropriate there
-  //go through the higher levels and cointoss where appropriate
-  struct node * lower;
-  int level = 0;
-  const int curr_deadline = proc->virt_deadline;
-
-  while (level < slist->levels) {
-    //roll the dice; level 0 is guaranteed
-    if (level != 0 && random(10000) >= 2500) { //check level first to short the AND check
-      break; //failed the cointoss? no point in going higher
-    }
-
-    //create a new node
-    struct node add = {0, 0, 0, 0};
-    add.proc = proc;
-    if (level != 0) { //if level != 0, also need to set the lower node
-      add.lower = lower;
-    }
-
-    //iterate through the current level to find where to insert
-    struct node * curr = slist->level[level].head->next;
-    while (curr->next != 0 && curr->next->proc->virt_deadline < curr_deadline) {
-      curr = curr->next;
-    }
-
-    //insert node
-    slist->level[level].length++;
-    curr->next->prev = &add;
-    add.next = curr->next;
-    add.prev = curr;
-    curr->next = &add;
-
-
-    //prep for next iteration
-    lower = &add;
-    level++;
-  }
-
-}; 
-
 struct proc * pop(skiplist *slist) {
   
   //get the first node in the bottommost level
@@ -119,7 +78,66 @@ found:
       //so I have no idea how to deallocate the memory associated with found.
     } while (found != 0);
   }
-}*/
+}
+
+void insert(struct skiplist *slist, struct proc *proc) {
+  //idea: iterate through the bottommost level and place it where appropriate there
+  //go through the higher levels and cointoss where appropriate
+  struct node * lower;
+  int level = 0;
+  const int curr_deadline = proc->virt_deadline;
+
+  while (level < slist->levels) {
+    //roll the dice; level 0 is guaranteed
+    if (level != 0 && random(10000) >= 2500) { //check level first to short the AND check
+      break; //failed the cointoss? no point in going higher
+    }
+
+    //create a new node
+    struct node add = {0, 0, 0, 0};
+    add.proc = proc;
+    if (level != 0) { //if level != 0, also need to set the lower node
+      add.lower = lower;
+    }
+
+    //iterate through the current level to find where to insert
+    void * curr = slist->level[level];
+    while (curr->next != 0 && curr->next->proc->virt_deadline < curr_deadline) {
+      curr = curr->next;
+    }
+
+    //insert node
+    slist->level[level].length++;
+    curr->next->prev = &add;
+    add.next = curr->next;
+    add.prev = curr;
+    curr->next = &add;
+
+
+    //prep for next iteration
+    lower = &add;
+    level++;
+  }
+
+}; */
+
+struct proc * get(int level, void * ptr) {
+  //higher levels are only pointers,
+  //need to go down to the bottom level to access actual content
+  void ** curr = ptr; //needs to be set to void to placate GCC
+  
+  
+  while (level > 1) {
+    curr = *curr; //using something like struct proc ** curr prevents this behavior from being possible
+    level--;
+  }
+  struct proc * p = * curr;
+
+  //should explicitly type-check that p is a pointer to a proc
+  //but C doesn't store type information and structs are out of the question due to the lack of malloc
+  //so if this returns the wrong pointer, then the fault is on the programmers
+  return p;
+}
 
 unsigned int random(uint max) {
   seed ^= seed << 17;
