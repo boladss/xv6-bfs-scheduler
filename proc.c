@@ -176,6 +176,7 @@ growproc(int n)
   return 0;
 }
 
+
 int
 nicefork(int nice_value)
 {
@@ -212,6 +213,10 @@ nicefork(int nice_value)
   pid = np->pid;
 
   np->nice = nice_value;   // VERIFY: Should this be added earlier?
+
+  // computes virtual deadline based on niceness and quantum
+  uint currticks = ticks;
+  np->virt_deadline = ticks + (nice_value * BFS_DEFAULT_QUANTUM); 
 
   acquire(&ptable.lock);
 
