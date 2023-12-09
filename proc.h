@@ -58,3 +58,5 @@ struct proc {
 //   original data and bss
 //   fixed-size stack
 //   expandable heap
+
+#define LEVELS    4 //number of levels in the skiplist

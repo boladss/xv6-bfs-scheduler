@@ -1,12 +1,11 @@
 #include "types.h"
 #include "defs.h"
+#include "param.h"
 #include "memlayout.h"
 #include "mmu.h"
 #include "x86.h"
+#include "proc.h"
 #include "spinlock.h"
-#include "skiplist.h"
-
-static int seed = 6969420;
 
 /*struct node pop(skiplist *slist) {
   struct node *next = slist->level[0].head.next;
@@ -79,72 +78,77 @@ found:
     } while (found != 0);
   }
 }
+ */
 
-void insert(struct skiplist *slist, struct proc *proc) {
-  //idea: iterate through the bottommost level and place it where appropriate there
-  //go through the higher levels and cointoss where appropriate
-  struct node * lower;
-  int level = 0;
-  const int curr_deadline = proc->virt_deadline;
+struct node {
+  struct node *prev;
+  struct node *next;
+  void * lower;
+  //lower is either struct node ***, struct node **, struct node *, or struct proc *
+  //which increases in asterisks the more levels there are.
+  //easier to just set it to void than create a union
+};
 
-  while (level < slist->levels) {
-    //roll the dice; level 0 is guaranteed
-    if (level != 0 && random(10000) >= 2500) { //check level first to short the AND check
-      break; //failed the cointoss? no point in going higher
-    }
+struct ptable {
+  struct spinlock lock;
+  struct node level[LEVELS][NPROC + 1]; //an array of either an array of processes (level 0) or an array of pointers (level 1+)
+  struct proc proc[NPROC];
+} ptable;
 
-    //create a new node
-    struct node add = {0, 0, 0, 0};
-    add.proc = proc;
-    if (level != 0) { //if level != 0, also need to set the lower node
-      add.lower = lower;
-    }
-
-    //iterate through the current level to find where to insert
-    void * curr = slist->level[level];
-    while (curr->next != 0 && curr->next->proc->virt_deadline < curr_deadline) {
-      curr = curr->next;
-    }
-
-    //insert node
-    slist->level[level].length++;
-    curr->next->prev = &add;
-    add.next = curr->next;
-    add.prev = curr;
-    curr->next = &add;
-
-
-    //prep for next iteration
-    lower = &add;
-    level++;
-  }
-
-}; */
-
-struct proc * get(int level, void * ptr) {
+struct proc * get(int level, void * node) {
   //higher levels are only pointers,
   //need to go down to the bottom level to access actual content
-  void ** curr = ptr; //needs to be set to void to placate GCC
+  struct node * curr = node; //void * can be type narrowed to node *
   
-  
-  while (level > 1) {
-    curr = *curr; //using something like struct proc ** curr prevents this behavior from being possible
+  while (level > 0) {
+    curr = curr->lower; //void * can be type narrowed to node *
     level--;
   }
-  struct proc * p = * curr;
+  struct proc * p = curr->lower; //void * can be type narrowed to proc *
 
   //should explicitly type-check that p is a pointer to a proc
   //but C doesn't store type information and structs are out of the question due to the lack of malloc
-  //so if this returns the wrong pointer, then the fault is on the programmers
+  //there isn't a try-catch block in kernel mode either
+  //up to programmer to guarantee this returns the correct pointer
   return p;
 }
 
+/*
+static int seed = 6969420;
 unsigned int random(uint max) {
   seed ^= seed << 17;
   seed ^= seed >> 7;
   seed ^= seed << 5;
   return seed % max;
 }
+
+void insert(struct ptable *ptable, struct proc *proc) {
+  //idea: iterate through the bottommost level and place it where appropriate there
+  //go through the higher levels and cointoss where appropriate
+  struct proc ** lower = &proc;
+  uint level = 0;
+  const int curr_deadline = proc->virt_deadline;
+
+  while (level < LEVELS) {
+    //roll the dice; level 0 is guaranteed
+    if (level != 0 && random(10000) >= 2500) { //check level first to short the AND check
+      break; //failed the cointoss? no point in going higher
+    }
+
+    //iterate through the current level to find where to insert
+    struct proc ** curr = ptable->level[level][0];
+    while (curr != 0 && get(level, curr)->virt_deadline < curr_deadline) {
+      curr++;
+    }
+
+    //insert node
+    curr = lower;
+
+    //prep for next iteration
+    lower = curr;
+    level++;
+  }
+};*/
 
 /*static skiplist slist = {
   4, 
@@ -155,12 +159,6 @@ unsigned int random(uint max) {
     {0, 0}
   }
 }; */
-
-struct {
-  struct spinlock lock;
-  struct skiplist slist;
-  struct proc proc[NPROC];
-} ptable;
 
 static struct proc *initproc;
 
@@ -175,7 +173,13 @@ pinit(void)
 {
   initlock(&ptable.lock, "ptable");
   acquire(&ptable.lock);
-  ptable.slist.levels = 4; //initialize the ptable, needs to be locked
+  for(int i = 0; i < LEVELS; i++) {
+    for(int j = 0; j < NPROC; j++) {
+      ptable.level[i][0].next = 0;
+      ptable.level[i][0].prev = 0;
+      ptable.level[i][0].lower = 0;
+    }
+  }
   release(&ptable.lock);
 }
 
