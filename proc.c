@@ -78,6 +78,24 @@ found:
     } while (found != 0);
   }
 }
+ 
+struct proc * get(int level, union ptr * node) {
+  //higher levels are only pointers,
+  //need to go down to the bottom level to access actual content
+  union ptr * curr = node; //void * can be type narrowed to node *
+  
+  while (level > 0) {
+    curr = curr->lower; //void * can be type narrowed to node *
+    level--;
+  }
+  struct proc * p = curr->lower; //void * can be type narrowed to proc *
+
+  //should explicitly type-check that p is a pointer to a proc
+  //but C doesn't store type information and structs are out of the question due to the lack of malloc
+  //there isn't a try-catch block in kernel mode either
+  //up to programmer to guarantee this returns the correct pointer
+  return p;
+}
  */
 
 struct node {
@@ -173,11 +191,12 @@ pinit(void)
 {
   initlock(&ptable.lock, "ptable");
   acquire(&ptable.lock);
+  //this functions as a ghetto allocation for, at most, NPROC nodes in the linked list
   for(int i = 0; i < LEVELS; i++) {
-    for(int j = 0; j < NPROC; j++) {
-      ptable.level[i][0].next = 0;
-      ptable.level[i][0].prev = 0;
-      ptable.level[i][0].lower = 0;
+    for(int j = 0; j < NPROC + 1; j++) {
+      ptable.level[i][j].next = 0;
+      ptable.level[i][j].prev = 0;
+      ptable.level[i][j].lower = 0;
     }
   }
   release(&ptable.lock);
