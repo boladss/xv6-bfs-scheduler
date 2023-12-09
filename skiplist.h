@@ -1,20 +1,10 @@
 #include "proc.h"
+#include "param.h"
 
-struct node{
-  struct proc *proc; //points to the proc datastructure of a node
-  struct node *next; //points to the next node in the same level
-  struct node *lower; //points to the same node in a lower level
-  struct node *prev; //points to previous node in the same level; helps with deletion
-};
-
-typedef struct { 
-  int length;
-  struct node *head;
-} linkedlist; 
-
-typedef struct {
-  //skiplist can only have 4 levels 
-  //so just initialize all 4 levels
+struct skiplist {
   uint levels;
-  linkedlist level[4];
-} skiplist;
+  union {
+    void * p[NPROC];
+    struct proc proc[NPROC];
+  } level[4]; //an array of either an array of processes (level 0) or an array of pointers (level 1+)
+};

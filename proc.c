@@ -1,6 +1,5 @@
 #include "types.h"
 #include "defs.h"
-#include "param.h"
 #include "memlayout.h"
 #include "mmu.h"
 #include "x86.h"
@@ -37,14 +36,7 @@ struct node * searchpid(skiplist *slist, int pid) {
     }
   }
   return 0; //otherwise, return nothing
-}; */
-
-unsigned int random(uint max) {
-  seed ^= seed << 17;
-  seed ^= seed >> 7;
-  seed ^= seed << 5;
-  return seed % max;
-}
+};
 
 void insert(skiplist *slist, struct proc *proc) {
   //idea: iterate through the bottommost level and place it where appropriate there
@@ -87,6 +79,13 @@ void insert(skiplist *slist, struct proc *proc) {
 
 }; 
 
+struct proc * pop(skiplist *slist) {
+  
+  //get the first node in the bottommost level
+  struct proc *popped = slist->;
+
+}
+
 void delete(skiplist *slist, struct proc *proc) {
   //this is exhaustive search
   //because the skiplist isn't sorted by pid
@@ -120,6 +119,13 @@ found:
       //so I have no idea how to deallocate the memory associated with found.
     } while (found != 0);
   }
+}*/
+
+unsigned int random(uint max) {
+  seed ^= seed << 17;
+  seed ^= seed >> 7;
+  seed ^= seed << 5;
+  return seed % max;
 }
 
 /*static skiplist slist = {
@@ -134,6 +140,7 @@ found:
 
 struct {
   struct spinlock lock;
+  struct skiplist slist;
   struct proc proc[NPROC];
 } ptable;
 
@@ -149,6 +156,9 @@ void
 pinit(void)
 {
   initlock(&ptable.lock, "ptable");
+  acquire(&ptable.lock);
+  ptable.slist.levels = 4; //initialize the ptable, needs to be locked
+  release(&ptable.lock);
 }
 
 // Must be called with interrupts disabled
