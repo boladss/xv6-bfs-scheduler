@@ -80,14 +80,11 @@ struct node {
   struct node *prev;
   struct node *next;
   struct node *lower;
-  //lower is either struct node ***, struct node **, struct node *, or struct proc *
-  //which increases in asterisks the more levels there are.
-  //easier to just set it to void than create a union
 };
 
 struct ptable {
   struct spinlock lock;
-  struct node level[LEVELS][NPROC + 1]; //an array of either an array of processes (level 0) or an array of pointers (level 1+)
+  struct node level[LEVELS][NPROC + 1];
   struct proc proc[NPROC];
 } ptable;
 
@@ -99,7 +96,7 @@ void delete(struct ptable *ptable, struct proc *proc) {
   struct node * curr = ptable->level[LEVELS - 1];
 
   while (curr->proc != proc) {
-    if (curr->next != 0 && curr_deadline <= curr->next->proc->virt_deadline)
+    if (curr->next != 0 && curr_deadline >= curr->next->proc->virt_deadline)
       curr = curr->next; //go forward until next deadline is bigger than current deadline
     else if (curr->lower != 0)
       curr = curr->lower; //go down if can no longer go forward
@@ -111,7 +108,8 @@ void delete(struct ptable *ptable, struct proc *proc) {
   do {
     //remove all references
     curr->prev->next = curr->next;
-    curr->next->prev = curr->prev;
+    if (curr->next != 0)
+      curr->next->prev = curr->prev;
 
     //deallocate current node
     curr->proc = 0; //technically only this has to be set... but might as well do the rest
