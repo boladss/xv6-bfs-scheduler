@@ -36,13 +36,6 @@ struct node * searchpid(skiplist *slist, int pid) {
   }
   return 0; //otherwise, return nothing
 };
-
-struct proc * pop(skiplist *slist) {
-  
-  //get the first node in the bottommost level
-  struct proc *popped = slist->;
-
-}
  
 struct proc * get(int level, union ptr * node) {
   //higher levels are only pointers,
@@ -98,8 +91,6 @@ struct ptable {
   struct proc proc[NPROC];
 } ptable;
 
-
-
 void delete(struct ptable *ptable, struct proc *proc) {
   const int curr_deadline = proc->virt_deadline;
 
@@ -112,7 +103,7 @@ void delete(struct ptable *ptable, struct proc *proc) {
       curr = curr->next; //go forward until next deadline is bigger than current deadline
     else if (curr->lower != 0)
       curr = curr->lower; //go down if can no longer go forward
-    else //bottom of the list, can't go forward or down
+    else //can't go forward or down
       panic("node set for deletion not found\n"); //shouldn't be in this block if the node can be found
   }
 
@@ -134,52 +125,80 @@ void delete(struct ptable *ptable, struct proc *proc) {
   } while (curr != 0);
 }
 
-static int seed = 6969420;
+struct proc * dequeue(struct ptable *ptable) {
+  //get the first node in the bottommost level
+  struct node * node = ptable->level[0][0].next;
+  struct proc * popped = node->proc;
+
+  //then delete the first node
+  delete(ptable, popped);
+
+  return popped;
+}
+
+static unsigned int seed = 6969420;
 unsigned int random(uint max) {
   seed ^= seed << 17;
   seed ^= seed >> 7;
   seed ^= seed << 5;
   return seed % max;
 }
-void insert(struct ptable *ptable, struct proc * proc) {
-  //idea: iterate through the bottommost level and place it where appropriate there
-  //go up through the levels one-by-one and get rand; if passes random, then do the same for that level
-  struct node * lower = 0; //see struct node for void reasoning
-  uint level = 0;
-  struct proc * p = proc; //need to type narrow proc to get the virtual deadline
-  const int curr_deadline = p->virt_deadline;
 
-  while (level < LEVELS) {
-    //roll the dice; level 0 is guaranteed
-    if (level != 0 && random(10000) >= 2500) { //check level first to short the AND check
-      break; //failed the cointoss? no point in going higher
+void insert(struct ptable *ptable, struct proc *proc) {
+  const int curr_deadline = proc->virt_deadline;
+  struct node *placement[LEVELS];
+  int level = LEVELS - 1;
+
+  // first: find all nodes which mark the locations of where to place new node
+  struct node *curr = &ptable->level[level][0];
+  while (level >= 0) {
+    if (curr->next != 0 && curr->next->proc->virt_deadline < curr_deadline)
+      curr = curr->next; // go forward until next deadline is bigger than or equal to current deadline
+    else if (curr->proc == 0) { // still at the head node
+      placement[level] = curr;
+      level--;
+      curr = &ptable->level[level][0];
+    } else {                   // can no longer go forward
+      placement[level] = curr; // first, push node to placements array
+      level--;                 // reduce level
+      if (curr->lower != 0)    // if can go lower, go lower
+        curr = curr->lower;
     }
-    //first, find a place in the array to store the struct. just use the first unallocated index
-    struct node * node = ptable->level[level];
-    do {
-      node++; //index 0 is the head node, so just skip it
+  }
+  // next, iterate through all the levels and insert
+  struct node *lower = 0;
+  for (level = 0; level < LEVELS; level++) {
+    // roll the dice; level 0 is guaranteed
+    int rand = random(10000);
+    printf(1, "LEVEL: %d, RAND: %d\n", level, rand);
+    if (level != 0) { // check level first to short the AND check
+      if (rand >= 2500)
+        return;
+    }
+
+    // find a place in the ptable array to store the struct. just use the first unallocated index
+    struct node *node = ptable->level[level];
+    node++; // index 0 is the head node, so just skip it
+    while (node->proc != 0) {
+      node++;
 
       if (node >= &ptable->level[level][NPROC + 1])
-        panic("not enough memory to store a new value\n");
-    } while (node->proc != 0);
+        printf(1, "not enough memory to store a new value\n");
+    }
     node->lower = lower;
     node->proc = proc;
 
-    //iterate through the current level to find where to insert
-    struct node * curr = ptable->level[level];
-    while (curr->next != 0 && curr_deadline < curr->proc->virt_deadline) {
-      curr++;
-    }
-
-    //insert node
+    // perform insert
+    curr = placement[level];
     node->prev = curr;
     node->next = curr->next;
-    curr->next->prev = node;
     curr->next = node;
+    if (node->next != 0) { // if not at the end yet
+      node->next->prev = node;
+    }
 
-    //prep for next iteration
-    lower = node; //void can be set to node
-    level++;
+    // prep for next iteration
+    lower = node;
   }
 }
 
