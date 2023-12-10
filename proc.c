@@ -168,7 +168,7 @@ void insert(struct ptable *ptable, struct proc *proc) {
   for (level = 0; level < LEVELS; level++) {
     // roll the dice; level 0 is guaranteed
     int rand = random(10000);
-    printf(1, "LEVEL: %d, RAND: %d\n", level, rand);
+    cprintf("LEVEL: %d, RAND: %d\n", level, rand);
     if (level != 0) { // check level first to short the AND check
       if (rand >= 2500)
         return;
@@ -181,7 +181,7 @@ void insert(struct ptable *ptable, struct proc *proc) {
       node++;
 
       if (node >= &ptable->level[level][NPROC + 1])
-        printf(1, "not enough memory to store a new value\n");
+        cprintf("not enough memory to store a new value\n");
     }
     node->lower = lower;
     node->proc = proc;
