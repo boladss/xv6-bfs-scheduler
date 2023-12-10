@@ -181,7 +181,7 @@ void insert(struct ptable *ptable, struct proc *proc) {
       node++;
 
       if (node >= &ptable->level[level][NPROC + 1])
-        cprintf("not enough memory to store a new value\n");
+        panic("not enough memory to store a new value\n");
     }
     node->lower = lower;
     node->proc = proc;
