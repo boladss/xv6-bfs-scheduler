@@ -8,74 +8,6 @@
 #include "spinlock.h"
 #include "bfs.h"
 
-/*struct node pop(skiplist *slist) {
-  struct node *next = slist->level[0].head.next;
-  return *next;
-} 
-
-void update(skiplist ) {
-
-}
-
-struct node * searchpid(skiplist *slist, int pid) {
-  //this is exhaustive search
-  //because the skiplist isn't sorted by pid
-  //it's sorted by virtual deadline
-  //so you have to exhaustive search anyway
-
-  //iterate through the levels from top to bottom
-  for(int i = slist->levels - 1; i >= 0; i--) {
-    if (slist->level[i].length < 1) {
-      continue; //current list is empty, so keep goin
-    }
-    struct node *curr = slist->level[i].head;
-    while (curr->next != 0) { //iterate through the list
-      if (curr->proc->pid == pid) {
-        return curr; //return if found
-      }
-    }
-  }
-  return 0; //otherwise, return nothing
-};
- 
-struct proc * get(int level, union ptr * node) {
-  //higher levels are only pointers,
-  //need to go down to the bottom level to access actual content
-  union ptr * curr = node; //void * can be type narrowed to node *
-  
-  while (level > 0) {
-    curr = curr->lower; //void * can be type narrowed to node *
-    level--;
-  }
-  struct proc * p = curr->lower; //void * can be type narrowed to proc *
-
-  //should explicitly type-check that p is a pointer to a proc
-  //but C doesn't store type information and structs are out of the question due to the lack of malloc
-  //there isn't a try-catch block in kernel mode either
-  //up to programmer to guarantee this returns the correct pointer
-  return p;
-
-  struct proc * get(int level, void * node) {
-  //higher levels are only pointers,
-  //need to go down to the bottom level to access actual content
-  struct node * curr = node; //void * can be type narrowed to node *
-  
-  while (level > 0) {
-    curr = curr->lower; //void * can be type narrowed to node *
-    level--;
-  }
-  struct proc * p = curr->lower; //void * can be type narrowed to proc *
-
-  //should explicitly type-check that p is a pointer to a proc
-  //but C doesn't store type information and structs are out of the question due to the lack of malloc
-  //there isn't a try-catch block in kernel mode either
-  //up to programmer to guarantee this returns the correct pointer
-  return p;
-}
-
-}
- */
-
 struct node {
   struct proc *proc;
   struct node *prev;
@@ -107,10 +39,8 @@ void delete(struct ptable *ptable, struct proc *proc) {
       level--;
       curr = ptable->level[level];
     }
-    else { //can't go forward or down
-      cprintf("PID %d: %s set for deletion not found\n", proc->pid, proc->name); //shouldn't be in this block if the node can be found
-      return;
-    }
+    else //can't go forward or down
+      panic("node set for deletion not found\n"); //shouldn't be in this block if the node can be found
   }
 
   //delete the node and all nodes below it
@@ -209,11 +139,13 @@ pinit(void)
   initlock(&ptable.lock, "ptable");
   acquire(&ptable.lock);
   for (int i = 0; i < LEVELS; i++) {
+    //initialize head node
+    ptable.level[i][0].prev = 0;
+    ptable.level[i][0].next = 0;
+    ptable.level[i][0].lower = 0;
     for (int j = 0; j < NPROC + 1; j++) {
+      //initialize nodes to be "unallocated" and usable by the insert function
       ptable.level[i][j].proc = 0;
-      ptable.level[i][j].prev = 0;
-      ptable.level[i][j].next = 0;
-      ptable.level[i][j].lower = 0;
     }
   }
   release(&ptable.lock);
@@ -344,7 +276,7 @@ userinit(void)
   acquire(&ptable.lock);
 
   p->state = RUNNABLE;
-  insert(&ptable, p); //NEEDED
+  insert(&ptable, p); //needed to push pid 0: init into skiplist
 
   release(&ptable.lock);
 }
@@ -387,6 +319,7 @@ nicefork(int nice_value)
     kfree(np->kstack);
     np->kstack = 0;
     np->state = UNUSED;
+    //no point deleting from the skiplist, nothing was ever added
     return -1;
   }
   np->sz = curproc->sz;
@@ -410,7 +343,7 @@ nicefork(int nice_value)
   acquire(&ptable.lock);
 
   np->state = RUNNABLE;
-  insert(&ptable, np); //NEEDED
+  insert(&ptable, np); //needed to push new processes into skiplist
 
   release(&ptable.lock);
 
@@ -468,7 +401,7 @@ exit(void)
 
   // Jump into the scheduler, never to return.
   curproc->state = ZOMBIE;
-  delete(&ptable, curproc);
+  delete(&ptable, curproc); //from running/runnable to zombie, can't be in the skip list
   sched();
   panic("zombie exit");
 }
@@ -501,6 +434,8 @@ wait(void)
         p->name[0] = 0;
         p->killed = 0;
         p->state = UNUSED;
+        //processes are removed from the skiplist upon zombification
+        //so no point deleting them here
         release(&ptable.lock);
         return pid;
       }
@@ -653,8 +588,10 @@ void
 yield(void)
 {
   acquire(&ptable.lock);  //DOC: yieldlock
-  myproc()->state = RUNNABLE;
-  insert(&ptable, myproc());
+  myproc()->state = RUNNABLE; 
+  //do not include an insert/delete here
+  //note that yield sets a running process to runnable
+  //both of which are states allowed to be in the skip list
   sched();
   release(&ptable.lock);
 }
@@ -706,7 +643,7 @@ sleep(void *chan, struct spinlock *lk)
   // Go to sleep.
   p->chan = chan;
   p->state = SLEEPING;
-  delete(&ptable, p);
+  delete(&ptable, p); //from running/runnable to sleeping, can't be in the skip list
 
   sched();
 
@@ -731,7 +668,7 @@ wakeup1(void *chan)
   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++)
     if(p->state == SLEEPING && p->chan == chan) {
       p->state = RUNNABLE;
-      insert(&ptable, p); //NEEDED
+      insert(&ptable, p); //from sleeping to runnable? have to insert that
     }
 }
 
@@ -759,7 +696,7 @@ kill(int pid)
       // Wake process from sleep if necessary.
       if(p->state == SLEEPING) {
         p->state = RUNNABLE;
-        insert(&ptable, p);
+        insert(&ptable, p); //from sleeping to runnable? have to insert that
       }
       release(&ptable.lock);
       return 0;
