@@ -7,10 +7,205 @@
 #include "proc.h"
 #include "spinlock.h"
 
-struct {
+/*struct node pop(skiplist *slist) {
+  struct node *next = slist->level[0].head.next;
+  return *next;
+} 
+
+void update(skiplist ) {
+
+}
+
+struct node * searchpid(skiplist *slist, int pid) {
+  //this is exhaustive search
+  //because the skiplist isn't sorted by pid
+  //it's sorted by virtual deadline
+  //so you have to exhaustive search anyway
+
+  //iterate through the levels from top to bottom
+  for(int i = slist->levels - 1; i >= 0; i--) {
+    if (slist->level[i].length < 1) {
+      continue; //current list is empty, so keep goin
+    }
+    struct node *curr = slist->level[i].head;
+    while (curr->next != 0) { //iterate through the list
+      if (curr->proc->pid == pid) {
+        return curr; //return if found
+      }
+    }
+  }
+  return 0; //otherwise, return nothing
+};
+ 
+struct proc * get(int level, union ptr * node) {
+  //higher levels are only pointers,
+  //need to go down to the bottom level to access actual content
+  union ptr * curr = node; //void * can be type narrowed to node *
+  
+  while (level > 0) {
+    curr = curr->lower; //void * can be type narrowed to node *
+    level--;
+  }
+  struct proc * p = curr->lower; //void * can be type narrowed to proc *
+
+  //should explicitly type-check that p is a pointer to a proc
+  //but C doesn't store type information and structs are out of the question due to the lack of malloc
+  //there isn't a try-catch block in kernel mode either
+  //up to programmer to guarantee this returns the correct pointer
+  return p;
+
+  struct proc * get(int level, void * node) {
+  //higher levels are only pointers,
+  //need to go down to the bottom level to access actual content
+  struct node * curr = node; //void * can be type narrowed to node *
+  
+  while (level > 0) {
+    curr = curr->lower; //void * can be type narrowed to node *
+    level--;
+  }
+  struct proc * p = curr->lower; //void * can be type narrowed to proc *
+
+  //should explicitly type-check that p is a pointer to a proc
+  //but C doesn't store type information and structs are out of the question due to the lack of malloc
+  //there isn't a try-catch block in kernel mode either
+  //up to programmer to guarantee this returns the correct pointer
+  return p;
+}
+
+}
+ */
+
+struct node {
+  struct proc *proc;
+  struct node *prev;
+  struct node *next;
+  struct node *lower;
+};
+
+struct ptable {
   struct spinlock lock;
+  struct node level[LEVELS][NPROC + 1];
   struct proc proc[NPROC];
 } ptable;
+
+void delete(struct ptable *ptable, struct proc *proc) {
+  const int curr_deadline = proc->virt_deadline;
+
+  //need to perform the proper skiplist search
+  //start with highest head node
+  struct node * curr = ptable->level[LEVELS - 1];
+
+  while (curr->proc != proc) {
+    if (curr->next != 0 && curr_deadline >= curr->next->proc->virt_deadline)
+      curr = curr->next; //go forward until next deadline is bigger than current deadline
+    else if (curr->lower != 0)
+      curr = curr->lower; //go down if can no longer go forward
+    else //can't go forward or down
+      panic("node set for deletion not found\n"); //shouldn't be in this block if the node can be found
+  }
+
+  //delete the node and all nodes below it
+  do {
+    //remove all references
+    curr->prev->next = curr->next;
+    if (curr->next != 0)
+      curr->next->prev = curr->prev;
+
+    //deallocate current node
+    curr->proc = 0; //technically only this has to be set... but might as well do the rest
+    curr->prev = 0;
+    curr->next = 0;
+
+    //iterate to node below current node
+    struct node * temp = curr; //need to store the current node to deallocate ->lower
+    curr = curr->lower; //set curr to lower
+    temp->lower = 0; //then deallocate
+  } while (curr != 0);
+}
+
+struct proc * dequeue(struct ptable *ptable) {
+  //get the first node in the bottommost level
+  struct node * node = ptable->level[0][0].next;
+  struct proc * popped = node->proc;
+
+  //then delete the first node
+  delete(ptable, popped);
+
+  return popped;
+}
+
+static unsigned int seed = 6969420;
+unsigned int random(uint max) {
+  seed ^= seed << 17;
+  seed ^= seed >> 7;
+  seed ^= seed << 5;
+  return seed % max;
+}
+
+void insert(struct ptable *ptable, struct proc *proc) {
+  const int curr_deadline = proc->virt_deadline;
+  struct node *placement[LEVELS];
+  int level = LEVELS - 1;
+
+  // first: find all nodes which mark the locations of where to place new node
+  struct node *curr = &ptable->level[level][0];
+  while (level >= 0) {
+    if (curr->next != 0 && curr->next->proc->virt_deadline < curr_deadline)
+      curr = curr->next; // go forward until next deadline is bigger than or equal to current deadline
+    else if (curr->proc == 0) { // still at the head node
+      placement[level] = curr;
+      level--;
+      curr = &ptable->level[level][0];
+    } else {                   // can no longer go forward
+      placement[level] = curr; // first, push node to placements array
+      level--;                 // reduce level
+      if (curr->lower != 0)    // if can go lower, go lower
+        curr = curr->lower;
+    }
+  }
+  // next, iterate through all the levels and insert
+  struct node *lower = 0;
+  for (level = 0; level < LEVELS; level++) {
+    // roll the dice; level 0 is guaranteed
+    if (level != 0 && random(10000) >= 2500) { // check level first to short the AND check
+      return;
+    }
+
+    // find a place in the ptable array to store the struct. just use the first unallocated index
+    struct node *node = ptable->level[level];
+    node++; // index 0 is the head node, so just skip it
+    while (node->proc != 0) {
+      node++;
+
+      if (node >= &ptable->level[level][NPROC + 1])
+        panic("not enough memory to store a new value\n");
+    }
+    node->lower = lower;
+    node->proc = proc;
+
+    // perform insert
+    curr = placement[level];
+    node->prev = curr;
+    node->next = curr->next;
+    curr->next = node;
+    if (node->next != 0) { // if not at the end yet
+      node->next->prev = node;
+    }
+
+    // prep for next iteration
+    lower = node;
+  }
+}
+
+/*static skiplist slist = {
+  4, 
+  {
+    {0, 0},
+    {0, 0},
+    {0, 0},
+    {0, 0}
+  }
+}; */
 
 static struct proc *initproc;
 
@@ -24,6 +219,16 @@ void
 pinit(void)
 {
   initlock(&ptable.lock, "ptable");
+  acquire(&ptable.lock);
+  //this functions as a ghetto allocation for, at most, NPROC nodes in the linked list
+  for(int i = 0; i < LEVELS; i++) {
+    for(int j = 0; j < NPROC + 1; j++) {
+      ptable.level[i][j].next = 0;
+      ptable.level[i][j].prev = 0;
+      ptable.level[i][j].lower = 0;
+    }
+  }
+  release(&ptable.lock);
 }
 
 // Must be called with interrupts disabled
