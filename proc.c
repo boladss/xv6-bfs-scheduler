@@ -167,11 +167,8 @@ void insert(struct ptable *ptable, struct proc *proc) {
   struct node *lower = 0;
   for (level = 0; level < LEVELS; level++) {
     // roll the dice; level 0 is guaranteed
-    int rand = random(10000);
-    cprintf("LEVEL: %d, RAND: %d\n", level, rand);
-    if (level != 0) { // check level first to short the AND check
-      if (rand >= 2500)
-        return;
+    if (level != 0 && random(10000) >= 2500) { // check level first to short the AND check
+      return;
     }
 
     // find a place in the ptable array to store the struct. just use the first unallocated index
