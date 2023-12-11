@@ -121,6 +121,7 @@ void            userinit(void);
 int             wait(void);
 void            wakeup(void*);
 void            yield(void);
+int             nicefork(int);
 void            schedlog(int);
 
 // swtch.S

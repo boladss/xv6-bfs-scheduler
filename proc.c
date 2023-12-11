@@ -381,11 +381,8 @@ growproc(int n)
   return 0;
 }
 
-// Create a new process copying p as the parent.
-// Sets up stack to return as if from system call.
-// Caller must set state of returned proc to RUNNABLE.
 int
-fork(void)
+nicefork(int nice_value)
 {
   int i, pid;
   struct proc *np;
@@ -419,6 +416,8 @@ fork(void)
 
   pid = np->pid;
 
+  np->nice = nice_value;   // VERIFY: Should this be added earlier?
+
   acquire(&ptable.lock);
 
   np->state = RUNNABLE;
@@ -426,6 +425,15 @@ fork(void)
   release(&ptable.lock);
 
   return pid;
+}
+
+// Create a new process copying p as the parent.
+// Sets up stack to return as if from system call.
+// Caller must set state of returned proc to RUNNABLE.
+int
+fork(void)
+{
+  return nicefork(0);
 }
 
 // Exit the current process.  Does not return.
