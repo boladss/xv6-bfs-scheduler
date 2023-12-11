@@ -192,6 +192,7 @@ UPROGS=\
 			_shutdown\
 	_loop\
 	_schedlog_test\
+	_nicefork_test\
 	_test\
 
 fs.img: mkfs README $(UPROGS)
