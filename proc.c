@@ -89,19 +89,27 @@ struct ptable {
 } ptable;
 
 void delete(struct ptable *ptable, struct proc *proc) {
+  //cprintf("DELETING PID %d: %s\n", proc->pid, proc->name);
   const int curr_deadline = proc->virt_deadline;
 
   //need to perform the proper skiplist search
   //start with highest head node
-  struct node * curr = ptable->level[LEVELS - 1];
+  int level = LEVELS - 1;
+  struct node * curr = ptable->level[level];
 
   while (curr->proc != proc) {
     if (curr->next != 0 && curr_deadline >= curr->next->proc->virt_deadline)
       curr = curr->next; //go forward until next deadline is bigger than current deadline
     else if (curr->lower != 0)
       curr = curr->lower; //go down if can no longer go forward
-    else //can't go forward or down
-      panic("node set for deletion not found\n"); //shouldn't be in this block if the node can be found
+    else if (curr->proc == 0) { //still at head node, go down to a lower level
+      level--;
+      curr = ptable->level[level];
+    }
+    else { //can't go forward or down
+      cprintf("PID %d: %s set for deletion not found\n", proc->pid, proc->name); //shouldn't be in this block if the node can be found
+      return;
+    }
   }
 
   //delete the node and all nodes below it
@@ -143,6 +151,7 @@ unsigned int random(uint max) {
 }
 
 void insert(struct ptable *ptable, struct proc *proc) {
+  //cprintf("INSERTING PID %d: %s\n", proc->pid, proc->name);
   const int curr_deadline = proc->virt_deadline;
   struct node *placement[LEVELS];
   int level = LEVELS - 1;
@@ -196,16 +205,6 @@ void insert(struct ptable *ptable, struct proc *proc) {
     lower = node;
   }
 }
-
-/*static skiplist slist = {
-  4, 
-  {
-    {0, 0},
-    {0, 0},
-    {0, 0},
-    {0, 0}
-  }
-}; */
 
 static struct proc *initproc;
 
@@ -356,6 +355,7 @@ userinit(void)
   acquire(&ptable.lock);
 
   p->state = RUNNABLE;
+  insert(&ptable, p);
 
   release(&ptable.lock);
 }
@@ -421,6 +421,7 @@ nicefork(int nice_value)
   acquire(&ptable.lock);
 
   np->state = RUNNABLE;
+  insert(&ptable, np);
 
   release(&ptable.lock);
 
@@ -478,6 +479,7 @@ exit(void)
 
   // Jump into the scheduler, never to return.
   curproc->state = ZOMBIE;
+  delete(&ptable, curproc);
   sched();
   panic("zombie exit");
 }
@@ -656,6 +658,7 @@ yield(void)
 {
   acquire(&ptable.lock);  //DOC: yieldlock
   myproc()->state = RUNNABLE;
+  insert(&ptable, myproc());
   sched();
   release(&ptable.lock);
 }
@@ -707,6 +710,7 @@ sleep(void *chan, struct spinlock *lk)
   // Go to sleep.
   p->chan = chan;
   p->state = SLEEPING;
+  delete(&ptable, p);
 
   sched();
 
@@ -729,8 +733,10 @@ wakeup1(void *chan)
   struct proc *p;
 
   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++)
-    if(p->state == SLEEPING && p->chan == chan)
+    if(p->state == SLEEPING && p->chan == chan) {
       p->state = RUNNABLE;
+      insert(&ptable, p);
+    }
 }
 
 // Wake up all processes sleeping on chan.
@@ -755,8 +761,10 @@ kill(int pid)
     if(p->pid == pid){
       p->killed = 1;
       // Wake process from sleep if necessary.
-      if(p->state == SLEEPING)
+      if(p->state == SLEEPING) {
         p->state = RUNNABLE;
+        insert(&ptable, p);
+      }
       release(&ptable.lock);
       return 0;
     }
