@@ -518,6 +518,15 @@ wait(void)
   }
 }
 
+// Add these declarations anywhere before the scheduler function
+int schedlog_active = 0;
+int schedlog_lasttick = 0;
+
+void schedlog(int n) {
+  schedlog_active = 1;
+  schedlog_lasttick = ticks + n;
+}
+
 //PAGEBREAK: 42
 // Per-CPU process scheduler.
 // Each CPU calls scheduler() after setting itself up.
@@ -551,6 +560,49 @@ scheduler(void)
       p->state = RUNNING;
       p->ticks_left = BFS_DEFAULT_QUANTUM;  // ticks_left implementation
       // p->ticks_done = 0;                    // ticks_done implementation
+
+      // Print schedlog details
+      if (schedlog_active) {
+        if (ticks > schedlog_lasttick) {
+          schedlog_active = 0;
+        } else {
+          cprintf("%d|", ticks);
+
+          struct proc *pp;
+          int highest_idx = -1;
+
+          for (int k = 0; k < NPROC; k++) {
+            pp = &ptable.proc[k];
+            if (pp->state != UNUSED) {
+              highest_idx = k;
+            }
+          }
+
+          // TEMPORARY VALUES:
+          int temp_maxlevel = 4;
+          // int temp_quantum = BFS_DEFAULT_QUANTUM;
+
+          /*
+          CLARIFICATIONS:
+          Based on the example in the Project 1 specs, there's a few ambiguous differences from Lab 5:
+          - Are unused processes not printed at all for the project? (as opposed to `[PID] ---:0`) 
+          - Should there be an indicator for the current process running? (marked with `*` in Lab 5)
+          - Does <quantum> refer to ticks left or ticks done?
+          - Other: maxlevel is not present in the example processes
+          */
+
+          for (int k = 0; k <= highest_idx; k++) {
+            pp = &ptable.proc[k];
+            if (pp->state == UNUSED) {}
+              //cprintf("[%d]---:0,", k);
+            else if (pp->state == RUNNING)
+              cprintf("[%d]*%s:%d:%d(%d)(%d)(%d),", k, pp->name, pp->state, pp->nice, temp_maxlevel, pp->virt_deadline, pp->ticks_left);
+            else
+              cprintf("[%d] %s:%d:%d(%d)(%d)(%d),", k, pp->name, pp->state, pp->nice, temp_maxlevel, pp->virt_deadline, pp->ticks_left);
+          }
+          cprintf("\n");
+        }
+      }
 
       swtch(&(c->scheduler), p->context);
       switchkvm();

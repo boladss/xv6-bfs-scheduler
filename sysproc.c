@@ -110,5 +110,11 @@ int sys_nicefork(void)
 
 int sys_schedlog(void)
 {
-  return 0;   // Temporary
+  int n;   // Initial code from Lab 5
+
+  if(argint(0, &n) < 0)
+    return -1;
+  
+  schedlog(n);
+  return 0;
 }
