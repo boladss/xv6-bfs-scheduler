@@ -6,6 +6,7 @@
 #include "x86.h"
 #include "proc.h"
 #include "spinlock.h"
+#include "bfs.h"
 
 /*struct node pop(skiplist *slist) {
   struct node *next = slist->level[0].head.next;
@@ -131,17 +132,6 @@ void delete(struct ptable *ptable, struct proc *proc) {
   } while (curr != 0);
 }
 
-struct proc * dequeue(struct ptable *ptable) {
-  //get the first node in the bottommost level
-  struct node * node = ptable->level[0][0].next;
-  struct proc * popped = node->proc;
-
-  //then delete the first node
-  delete(ptable, popped);
-
-  return popped;
-}
-
 static unsigned int seed = 6969420;
 unsigned int random(uint max) {
   seed ^= seed << 17;
@@ -185,7 +175,6 @@ void insert(struct ptable *ptable, struct proc *proc) {
     node++; // index 0 is the head node, so just skip it
     while (node->proc != 0) {
       node++;
-
       if (node >= &ptable->level[level][NPROC + 1])
         panic("not enough memory to store a new value\n");
     }
@@ -219,11 +208,11 @@ pinit(void)
 {
   initlock(&ptable.lock, "ptable");
   acquire(&ptable.lock);
-  //this functions as a ghetto allocation for, at most, NPROC nodes in the linked list
-  for(int i = 0; i < LEVELS; i++) {
-    for(int j = 0; j < NPROC + 1; j++) {
-      ptable.level[i][j].next = 0;
+  for (int i = 0; i < LEVELS; i++) {
+    for (int j = 0; j < NPROC + 1; j++) {
+      ptable.level[i][j].proc = 0;
       ptable.level[i][j].prev = 0;
+      ptable.level[i][j].next = 0;
       ptable.level[i][j].lower = 0;
     }
   }
@@ -355,7 +344,7 @@ userinit(void)
   acquire(&ptable.lock);
 
   p->state = RUNNABLE;
-  insert(&ptable, p);
+  insert(&ptable, p); //NEEDED
 
   release(&ptable.lock);
 }
@@ -421,7 +410,7 @@ nicefork(int nice_value)
   acquire(&ptable.lock);
 
   np->state = RUNNABLE;
-  insert(&ptable, np);
+  insert(&ptable, np); //NEEDED
 
   release(&ptable.lock);
 
@@ -545,30 +534,31 @@ void schedlog(int n) {
 //  - swtch to start running that process
 //  - eventually that process transfers control
 //      via swtch back to the scheduler.
-void
-scheduler(void)
+void 
+scheduler(void) 
 {
   struct proc *p;
   struct cpu *c = mycpu();
   c->proc = 0;
-  
-  for(;;){
+  cprintf("entering scheduler\n");
+  for (;;) {
     // Enable interrupts on this processor.
     sti();
 
     // Loop over process table looking for process to run.
     acquire(&ptable.lock);
-    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-      if(p->state != RUNNABLE)
-        continue;
-
+    if (ptable.level[0][0].next != 0) { //currently empty skiplist, so wait for something to run
+      p = ptable.level[0][0].next->proc;
+      if (p == 0)                       //proctable doesn't exist
+        panic("selected process is 0\n");
       // Switch to chosen process.  It is the process's job
       // to release ptable.lock and then reacquire it
       // before jumping back to us.
+      // cprintf((p == ptable.level[0][0].next->proc) ? "TRUE\n" : "FALSE\n");
       c->proc = p;
       switchuvm(p);
       p->state = RUNNING;
-      p->ticks_left = BFS_DEFAULT_QUANTUM;  // ticks_left implementation
+      p->ticks_left = BFS_DEFAULT_QUANTUM; // ticks_left implementation
       // p->ticks_done = 0;                    // ticks_done implementation
 
       // Print schedlog details
@@ -594,21 +584,27 @@ scheduler(void)
 
           /*
           CLARIFICATIONS:
-          Based on the example in the Project 1 specs, there's a few ambiguous differences from Lab 5:
-          - Are unused processes not printed at all for the project? (as opposed to `[PID] ---:0`) 
-          - Should there be an indicator for the current process running? (marked with `*` in Lab 5)
+          Based on the example in the Project 1 specs, there's a few ambiguous
+          differences from Lab 5:
+          - Are unused processes not printed at all for the project? (as opposed
+          to `[PID] ---:0`)
+          - Should there be an indicator for the current process running?
+          (marked with `*` in Lab 5)
           - Does <quantum> refer to ticks left or ticks done?
           - Other: maxlevel is not present in the example processes
           */
 
           for (int k = 0; k <= highest_idx; k++) {
             pp = &ptable.proc[k];
-            if (pp->state == UNUSED) {}
-              //cprintf("[%d]---:0,", k);
+            if (pp->state == UNUSED) {
+            }
+            // cprintf("[%d]---:0,", k);
             else if (pp->state == RUNNING)
-              cprintf("[%d]*%s:%d:%d(%d)(%d)(%d),", k, pp->name, pp->state, pp->nice, temp_maxlevel, pp->virt_deadline, pp->ticks_left);
+              cprintf("[%d]*%s:%d:%d(%d)(%d)(%d),", k, pp->name, pp->state,
+                      pp->nice, temp_maxlevel, pp->virt_deadline, pp->ticks_left);
             else
-              cprintf("[%d] %s:%d:%d(%d)(%d)(%d),", k, pp->name, pp->state, pp->nice, temp_maxlevel, pp->virt_deadline, pp->ticks_left);
+              cprintf("[%d] %s:%d:%d(%d)(%d)(%d),", k, pp->name, pp->state,
+                      pp->nice, temp_maxlevel, pp->virt_deadline, pp->ticks_left);
           }
           cprintf("\n");
         }
@@ -622,7 +618,6 @@ scheduler(void)
       c->proc = 0;
     }
     release(&ptable.lock);
-
   }
 }
 
@@ -648,6 +643,7 @@ sched(void)
   if(readeflags()&FL_IF)
     panic("sched interruptible");
   intena = mycpu()->intena;
+  //cprintf("switching from %s to scheduler\n", p->name);
   swtch(&p->context, mycpu()->scheduler);
   mycpu()->intena = intena;
 }
@@ -735,7 +731,7 @@ wakeup1(void *chan)
   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++)
     if(p->state == SLEEPING && p->chan == chan) {
       p->state = RUNNABLE;
-      insert(&ptable, p);
+      insert(&ptable, p); //NEEDED
     }
 }
 
