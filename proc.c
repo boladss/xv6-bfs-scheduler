@@ -88,9 +88,10 @@ void insert(struct ptable *ptable, struct proc *proc) {
     } else {                   // can no longer go forward
       placement[level] = curr; // first, push node to placements array
       level--;                 // reduce level
+      
       curr = curr->lower;
-      if (curr->lower == 0 && level >= 0)    // if can go lower, go lower
-        panic("at level 0 with no lower");
+      if (curr == 0 && level >= 0)    // if can go lower, go lower
+        panic("above level 0 with no lower");
     }
   }
   // next, iterate through all the levels and insert
@@ -343,7 +344,8 @@ nicefork(int nice_value)
   np->nice = nice_value;   // VERIFY: Should this be added earlier?
 
   // computes virtual deadline based on niceness and quantum
-  np->virt_deadline = ticks + (nice_value * BFS_DEFAULT_QUANTUM); 
+  np->virt_deadline = ticks + ((nice_value + NICE_FIRST_LEVEL + 1) * BFS_DEFAULT_QUANTUM); 
+  // check if can add anonymous function in bfs.h or in c
 
   acquire(&ptable.lock);
 
