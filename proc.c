@@ -88,8 +88,9 @@ void insert(struct ptable *ptable, struct proc *proc) {
     } else {                   // can no longer go forward
       placement[level] = curr; // first, push node to placements array
       level--;                 // reduce level
-      if (curr->lower != 0)    // if can go lower, go lower
-        curr = curr->lower;
+      curr = curr->lower;
+      if (curr->lower == 0 && level >= 0)    // if can go lower, go lower
+        panic("at level 0 with no lower");
     }
   }
   // next, iterate through all the levels and insert
