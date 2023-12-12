@@ -248,8 +248,8 @@ allocproc(void)
   return 0;
 
 found:
-  p->virt_deadline = 0; //change this later
-  p->nice = 0; //nice defaults to 0
+  p->virt_deadline = 0; //default, should be changed by caller after
+  p->nice = 0; //default, should be changed by caller after
   p->state = EMBRYO;
   p->pid = nextpid++;
 
@@ -302,6 +302,7 @@ userinit(void)
   p->tf->eflags = FL_IF;
   p->tf->esp = PGSIZE;
   p->tf->eip = 0;  // beginning of initcode.S
+  //no reason to set virtual deadline or nice value for init.
 
   safestrcpy(p->name, "initcode", sizeof(p->name));
   p->cwd = namei("/");
@@ -380,7 +381,7 @@ nicefork(int nice_value)
   np->nice = nice_value;   // VERIFY: Should this be added earlier?
 
   // computes virtual deadline based on niceness and quantum
-  np->virt_deadline = ticks + ((nice_value + NICE_FIRST_LEVEL + 1) * BFS_DEFAULT_QUANTUM); 
+  np->virt_deadline = ticks + VIRT_DEADLINE(nice_value); 
   // check if can add anonymous function in bfs.h or in c
   acquire(&ptable.lock);
 
@@ -629,15 +630,19 @@ sched(void)
 void
 yield(void)
 {
+  struct proc * p = myproc();
+  int level;
+  cprintf("deleted|[%d]%d\n", p->pid, p->max_skiplist_level);
   acquire(&ptable.lock);  //DOC: yieldlock
-  myproc()->state = RUNNABLE; 
+  p->state = RUNNABLE; 
 
   //need to recompute virt deadline
-  /*delete(&ptable, myproc());
-  myproc()->virt_deadline = ticks + (myproc()->nice * myproc()->ticks_left);
-  insert(&ptable, myproc());*/
+  delete(&ptable, p);
+  p->virt_deadline = ticks + VIRT_DEADLINE(p->nice);
+  level = insert(&ptable, p);
   sched();
   release(&ptable.lock);
+  cprintf("inserted|[%d]%d\n", p->pid, level);
 }
 
 // A fork child's very first scheduling by scheduler()
