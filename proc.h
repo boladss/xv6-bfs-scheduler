@@ -52,6 +52,7 @@ struct proc {
   int virt_deadline;           // Virtual deadline, in ticks
   int nice;                    // nice value
   int ticks_left;              // Remaining ticks in quantum
+  int max_skiplist_level;      // maximum level in a skiplist, 1-indexed
   // int ticks_done            // Ticks done in quantum (just in case)
 };
 
@@ -60,5 +61,3 @@ struct proc {
 //   original data and bss
 //   fixed-size stack
 //   expandable heap
-
-#define LEVELS    4 //number of levels in the skiplist

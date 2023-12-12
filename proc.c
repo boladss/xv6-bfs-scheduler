@@ -1,19 +1,24 @@
 #include "types.h"
 #include "defs.h"
-#include "param.h"
+#include "param.h" //includes bfs.h already
 #include "memlayout.h"
 #include "mmu.h"
 #include "x86.h"
 #include "proc.h"
 #include "spinlock.h"
-#include "bfs.h"
 
+// STRUCTS
 struct node {
   struct proc *proc;
   struct node *prev;
   struct node *next;
   struct node *lower;
 };
+// node is defined here as no other file uses it anyway
+// so no point having it in the header
+
+// GLOBALS
+static unsigned int seed = SEED;
 
 struct ptable {
   struct spinlock lock;
@@ -21,10 +26,17 @@ struct ptable {
   struct proc proc[NPROC];
 } ptable;
 
-void delete(struct ptable *ptable, struct proc *proc) {
-  //cprintf("DELETING PID %d: %s\n", proc->pid, proc->name);
-  const int curr_deadline = proc->virt_deadline;
+static struct proc *initproc;
 
+int nextpid = 1;
+extern void forkret(void);
+extern void trapret(void);
+
+static void wakeup1(void *chan);
+
+// SKIP LIST FUNCTIONS
+void delete(struct ptable *ptable, struct proc *proc) {
+  const int curr_deadline = proc->virt_deadline;
   struct node *placement[LEVELS];
   int level = LEVELS - 1;
 
@@ -33,6 +45,8 @@ void delete(struct ptable *ptable, struct proc *proc) {
   while (level >= 0) {
     if (curr->next != 0 && curr->next->proc->virt_deadline < curr_deadline)
       curr = curr->next; // go forward while next deadline is less than current deadline
+      //stop going forward even if next node has an equal virtual deadline
+      //which prioritizes to-be inserted node
     else if (curr->proc == 0) { // still at the head node
       placement[level] = curr;
       level--;
@@ -49,7 +63,7 @@ void delete(struct ptable *ptable, struct proc *proc) {
 
   //then: iterate through the placements top to bottom until it is found
   //this guarantees that deletion is done starting from the highest level of a node
-  //even if multiple nodes have the same virtual deadline
+  //even if multiple nodes have equal virtual deadlines but unequal max skiplist levels
   for (level = LEVELS - 1; curr->proc != proc; level--) {
     if (level < 0)
       panic("deletion search beyond lowest level");
@@ -63,13 +77,10 @@ void delete(struct ptable *ptable, struct proc *proc) {
     }
   }
 
-  if (curr->proc != proc)
-    panic("somehow, found deletion node is not the right node\n");
-
   //delete the node and all nodes below it
   do {
     //remove all references
-    if (curr->prev == 0)
+    if (curr->prev == 0) //checked to prevent page faulting
       panic("somehow deleting node with no set previous\n");
     curr->prev->next = curr->next;
     if (curr->next != 0)
@@ -79,6 +90,7 @@ void delete(struct ptable *ptable, struct proc *proc) {
     curr->proc = 0; //technically only this has to be set... but might as well do the rest
     curr->prev = 0;
     curr->next = 0;
+    proc->max_skiplist_level = 0;
 
     //iterate to node below current node
     struct node * temp = curr; //need to store the current node to deallocate ->lower
@@ -87,7 +99,6 @@ void delete(struct ptable *ptable, struct proc *proc) {
   } while (curr != 0);
 }
 
-static unsigned int seed = 6969420;
 unsigned int random(uint max) {
   seed ^= seed << 17;
   seed ^= seed >> 7;
@@ -96,7 +107,6 @@ unsigned int random(uint max) {
 }
 
 void insert(struct ptable *ptable, struct proc *proc) {
-  //cprintf("INSERTING PID %d: %s\n", proc->pid, proc->name);
   const int curr_deadline = proc->virt_deadline;
   struct node *placement[LEVELS];
   int level = LEVELS - 1;
@@ -123,7 +133,8 @@ void insert(struct ptable *ptable, struct proc *proc) {
   struct node *lower = 0;
   for (level = 0; level < LEVELS; level++) {
     // roll the dice; level 0 is guaranteed
-    if (level != 0 && random(10000) >= 2500) { // check level first to short the AND check
+    if (level != 0 && random(10000) >= SKIPLIST_P) { // check level first to short the AND check
+      proc->max_skiplist_level = level; //set max skiplist level
       return;
     }
 
@@ -134,6 +145,9 @@ void insert(struct ptable *ptable, struct proc *proc) {
       node++;
       if (node >= &ptable->level[level][NPROC + 1])
         panic("not enough memory to store a new value\n");
+        //note that inserts only occur after a value has been placed into the pcb array
+        //being in this block means a process fits in the pcb array but somehow doesn't fit in the skiplist
+        //which shouldn't happen, so panic
     }
     node->lower = lower;
     node->proc = proc;
@@ -150,16 +164,10 @@ void insert(struct ptable *ptable, struct proc *proc) {
     // prep for next iteration
     lower = node;
   }
+  proc->max_skiplist_level = LEVELS; //escaped the for loop? congrats, that's the max level
 }
 
-static struct proc *initproc;
-
-int nextpid = 1;
-extern void forkret(void);
-extern void trapret(void);
-
-static void wakeup1(void *chan);
-
+// xv6 FUNCTIONS
 void
 pinit(void)
 {
@@ -522,7 +530,6 @@ scheduler(void)
       // Switch to chosen process.  It is the process's job
       // to release ptable.lock and then reacquire it
       // before jumping back to us.
-      // cprintf((p == ptable.level[0][0].next->proc) ? "TRUE\n" : "FALSE\n");
       c->proc = p;
       switchuvm(p);
       p->state = RUNNING;
@@ -546,8 +553,6 @@ scheduler(void)
             }
           }
 
-          // TEMPORARY VALUES:
-          int temp_maxlevel = 4;
           // int temp_quantum = BFS_DEFAULT_QUANTUM;
 
           /*
@@ -567,12 +572,11 @@ scheduler(void)
             if (pp->state == UNUSED) {
             }
             // cprintf("[%d]---:0,", k);
-            else if (pp->state == RUNNING)
-              cprintf("[%d]*%s:%d:%d(%d)(%d)(%d),", k, pp->name, pp->state,
-                      pp->nice, temp_maxlevel, pp->virt_deadline, pp->ticks_left);
             else
-              cprintf("[%d] %s:%d:%d(%d)(%d)(%d),", k, pp->name, pp->state,
-                      pp->nice, temp_maxlevel, pp->virt_deadline, pp->ticks_left);
+              cprintf("[%d]%s%s:%d:%d(%d)(%d)(%d),", 
+                k, (pp->state == RUNNING) ? "*" : " ", 
+                pp->name, pp->state, pp->nice, pp->max_skiplist_level - 1, 
+                pp->virt_deadline, pp->ticks_left);
           }
           cprintf("\n");
         }
