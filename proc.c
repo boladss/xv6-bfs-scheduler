@@ -30,8 +30,8 @@ void delete(struct ptable *ptable, struct proc *proc) {
   int level = LEVELS - 1;
   struct node * curr = ptable->level[level];
 
-  while (curr->proc != proc) {
-    if (curr->next != 0 && curr_deadline >= curr->next->proc->virt_deadline)
+  while (curr->next->proc != proc) {
+    if (curr->next != 0 && curr_deadline > curr->next->proc->virt_deadline)
       curr = curr->next; //go forward until next deadline is bigger than current deadline
     else if (curr->lower != 0)
       curr = curr->lower; //go down if can no longer go forward
@@ -42,6 +42,8 @@ void delete(struct ptable *ptable, struct proc *proc) {
     else //can't go forward or down
       panic("node set for deletion not found\n"); //shouldn't be in this block if the node can be found
   }
+
+  curr = curr->next;
 
   //delete the node and all nodes below it
   do {
