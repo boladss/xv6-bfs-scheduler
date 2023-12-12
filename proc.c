@@ -25,29 +25,52 @@ void delete(struct ptable *ptable, struct proc *proc) {
   //cprintf("DELETING PID %d: %s\n", proc->pid, proc->name);
   const int curr_deadline = proc->virt_deadline;
 
-  //need to perform the proper skiplist search
-  //start with highest head node
+  struct node *placement[LEVELS];
   int level = LEVELS - 1;
-  struct node * curr = ptable->level[level];
 
-  while (curr->next->proc != proc) {
-    if (curr->next != 0 && curr_deadline > curr->next->proc->virt_deadline)
-      curr = curr->next; //go forward until next deadline is bigger than current deadline
-    else if (curr->lower != 0)
-      curr = curr->lower; //go down if can no longer go forward
-    else if (curr->proc == 0) { //still at head node, go down to a lower level
+  // first: find all nodes which mark the locations of where to check new node
+  struct node *curr = &ptable->level[level][0];
+  while (level >= 0) {
+    if (curr->next != 0 && curr->next->proc->virt_deadline < curr_deadline)
+      curr = curr->next; // go forward while next deadline is less than current deadline
+    else if (curr->proc == 0) { // still at the head node
+      placement[level] = curr;
       level--;
-      curr = ptable->level[level];
+      curr = &ptable->level[level][0];
+    } else {                   // can no longer go forward
+      placement[level] = curr; // first, push node to placements array
+      level--;                 // reduce level
+      curr = curr->lower;      // go lower
+      if (curr == 0 && level >= 0)    
+        panic("deletion: above level 0 with no lower");
+        //somehow got to a zero pointer without making it to level 0, so panic
     }
-    else //can't go forward or down
-      panic("node set for deletion not found\n"); //shouldn't be in this block if the node can be found
   }
 
-  curr = curr->next;
+  //then: iterate through the placements top to bottom until it is found
+  //this guarantees that deletion is done starting from the highest level of a node
+  //even if multiple nodes have the same virtual deadline
+  for (level = LEVELS - 1; curr->proc != proc; level--) {
+    if (level < 0)
+      panic("deletion search beyond lowest level");
+
+    curr = placement[level];
+    while (curr->next != 0 //next value exists
+      && curr->next->proc->virt_deadline == curr_deadline //next deadline and current deadline are still equal 
+      && curr->proc != proc //process isn't found yet
+    ) {
+      curr = curr->next;
+    }
+  }
+
+  if (curr->proc != proc)
+    panic("somehow, found deletion node is not the right node\n");
 
   //delete the node and all nodes below it
   do {
     //remove all references
+    if (curr->prev == 0)
+      panic("somehow deleting node with no set previous\n");
     curr->prev->next = curr->next;
     if (curr->next != 0)
       curr->next->prev = curr->prev;
@@ -82,7 +105,7 @@ void insert(struct ptable *ptable, struct proc *proc) {
   struct node *curr = &ptable->level[level][0];
   while (level >= 0) {
     if (curr->next != 0 && curr->next->proc->virt_deadline < curr_deadline)
-      curr = curr->next; // go forward until next deadline is bigger than or equal to current deadline
+      curr = curr->next; // go forward while next deadline is less than current deadline
     else if (curr->proc == 0) { // still at the head node
       placement[level] = curr;
       level--;
@@ -90,10 +113,10 @@ void insert(struct ptable *ptable, struct proc *proc) {
     } else {                   // can no longer go forward
       placement[level] = curr; // first, push node to placements array
       level--;                 // reduce level
-      
-      curr = curr->lower;
-      if (curr == 0 && level >= 0)    // if can go lower, go lower
-        panic("above level 0 with no lower");
+      curr = curr->lower;      // go lower
+      if (curr == 0 && level >= 0)    
+        panic("insertion: above level 0 with no lower");
+        //somehow got to a zero pointer without making it to level 0, so panic
     }
   }
   // next, iterate through all the levels and insert
@@ -348,7 +371,7 @@ nicefork(int nice_value)
   // computes virtual deadline based on niceness and quantum
   np->virt_deadline = ticks + ((nice_value + NICE_FIRST_LEVEL + 1) * BFS_DEFAULT_QUANTUM); 
   // check if can add anonymous function in bfs.h or in c
-
+  //cprintf("forking, inserting PID %d\n", np->pid);
   acquire(&ptable.lock);
 
   np->state = RUNNABLE;
@@ -395,6 +418,8 @@ exit(void)
   curproc->cwd = 0;
 
   acquire(&ptable.lock);
+  if (curproc->state == RUNNING || curproc->state == RUNNABLE)
+    delete(&ptable, curproc); //from running/runnable to zombie, can't be in the skip list
 
   // Parent might be sleeping in wait().
   wakeup1(curproc->parent);
@@ -410,7 +435,6 @@ exit(void)
 
   // Jump into the scheduler, never to return.
   curproc->state = ZOMBIE;
-  delete(&ptable, curproc); //from running/runnable to zombie, can't be in the skip list
   sched();
   panic("zombie exit");
 }
@@ -484,7 +508,6 @@ scheduler(void)
   struct proc *p;
   struct cpu *c = mycpu();
   c->proc = 0;
-  cprintf("entering scheduler\n");
   for (;;) {
     // Enable interrupts on this processor.
     sti();
@@ -494,7 +517,8 @@ scheduler(void)
     if (ptable.level[0][0].next != 0) { //currently empty skiplist, so wait for something to run
       p = ptable.level[0][0].next->proc;
       if (p == 0)                       //proctable doesn't exist
-        panic("selected process is 0\n");
+        panic("selected process is 0\n"); 
+
       // Switch to chosen process.  It is the process's job
       // to release ptable.lock and then reacquire it
       // before jumping back to us.
@@ -598,9 +622,11 @@ yield(void)
 {
   acquire(&ptable.lock);  //DOC: yieldlock
   myproc()->state = RUNNABLE; 
-  //do not include an insert/delete here
-  //note that yield sets a running process to runnable
-  //both of which are states allowed to be in the skip list
+
+  //need to recompute virt deadline
+  /*delete(&ptable, myproc());
+  myproc()->virt_deadline = ticks + (myproc()->nice * myproc()->ticks_left);
+  insert(&ptable, myproc());*/
   sched();
   release(&ptable.lock);
 }
@@ -651,8 +677,9 @@ sleep(void *chan, struct spinlock *lk)
   }
   // Go to sleep.
   p->chan = chan;
+  if (p->state == RUNNABLE || p->state == RUNNING)
+    delete(&ptable, p); //from running/runnable to sleeping, can't be in the skip list
   p->state = SLEEPING;
-  delete(&ptable, p); //from running/runnable to sleeping, can't be in the skip list
 
   sched();
 
@@ -708,6 +735,7 @@ kill(int pid)
         insert(&ptable, p); //from sleeping to runnable? have to insert that
       }
       release(&ptable.lock);
+      cprintf("killed PID %d: %s\n", p->pid, p->name);
       return 0;
     }
   }
