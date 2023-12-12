@@ -35,7 +35,7 @@ extern void trapret(void);
 static void wakeup1(void *chan);
 
 // SKIP LIST FUNCTIONS
-void delete(struct ptable *ptable, struct proc *proc) {
+static int delete(struct ptable *ptable, struct proc *proc) {
   const int curr_deadline = proc->virt_deadline;
   struct node *placement[LEVELS];
   int level = LEVELS - 1;
@@ -90,23 +90,25 @@ void delete(struct ptable *ptable, struct proc *proc) {
     curr->proc = 0; //technically only this has to be set... but might as well do the rest
     curr->prev = 0;
     curr->next = 0;
-    proc->max_skiplist_level = 0;
 
     //iterate to node below current node
     struct node * temp = curr; //need to store the current node to deallocate ->lower
     curr = curr->lower; //set curr to lower
     temp->lower = 0; //then deallocate
   } while (curr != 0);
+  level = proc->max_skiplist_level;
+  proc->max_skiplist_level = 0; //unnecessary for the spec, but good for clarity (when is a process not in the skiplist)
+  return level;
 }
 
-unsigned int random(uint max) {
+static unsigned int random(uint max) {
   seed ^= seed << 17;
   seed ^= seed >> 7;
   seed ^= seed << 5;
   return seed % max;
 }
 
-void insert(struct ptable *ptable, struct proc *proc) {
+static int insert(struct ptable *ptable, struct proc *proc) {
   const int curr_deadline = proc->virt_deadline;
   struct node *placement[LEVELS];
   int level = LEVELS - 1;
@@ -134,8 +136,7 @@ void insert(struct ptable *ptable, struct proc *proc) {
   for (level = 0; level < LEVELS; level++) {
     // roll the dice; level 0 is guaranteed
     if (level != 0 && random(10000) >= SKIPLIST_P) { // check level first to short the AND check
-      proc->max_skiplist_level = level; //set max skiplist level
-      return;
+      break;
     }
 
     // find a place in the ptable array to store the struct. just use the first unallocated index
@@ -164,7 +165,8 @@ void insert(struct ptable *ptable, struct proc *proc) {
     // prep for next iteration
     lower = node;
   }
-  proc->max_skiplist_level = LEVELS; //escaped the for loop? congrats, that's the max level
+  proc->max_skiplist_level = level; //escaped the for loop? congrats, that's the max level
+  return level;
 }
 
 // xv6 FUNCTIONS
@@ -311,9 +313,10 @@ userinit(void)
   acquire(&ptable.lock);
 
   p->state = RUNNABLE;
-  insert(&ptable, p); //needed to push pid 0: init into skiplist
+  int level = insert(&ptable, p); //needed to push pid 0: init into skiplist
 
   release(&ptable.lock);
+  cprintf("inserted|[%d]%d\n", p->pid, level - 1);
 }
 
 // Grow current process's memory by n bytes.
@@ -379,14 +382,14 @@ nicefork(int nice_value)
   // computes virtual deadline based on niceness and quantum
   np->virt_deadline = ticks + ((nice_value + NICE_FIRST_LEVEL + 1) * BFS_DEFAULT_QUANTUM); 
   // check if can add anonymous function in bfs.h or in c
-  //cprintf("forking, inserting PID %d\n", np->pid);
   acquire(&ptable.lock);
 
   np->state = RUNNABLE;
-  insert(&ptable, np); //needed to push new processes into skiplist
+  int level = insert(&ptable, np); //needed to push new processes into skiplist
 
   release(&ptable.lock);
-
+  cprintf("inserted|[%d]%d\n", np->pid, level - 1);
+  
   return pid;
 }
 
@@ -425,9 +428,10 @@ exit(void)
   end_op();
   curproc->cwd = 0;
 
+  int level = -1;
   acquire(&ptable.lock);
   if (curproc->state == RUNNING || curproc->state == RUNNABLE)
-    delete(&ptable, curproc); //from running/runnable to zombie, can't be in the skip list
+    level = delete(&ptable, curproc); //from running/runnable to zombie, can't be in the skip list
 
   // Parent might be sleeping in wait().
   wakeup1(curproc->parent);
@@ -443,6 +447,10 @@ exit(void)
 
   // Jump into the scheduler, never to return.
   curproc->state = ZOMBIE;
+  release(&ptable.lock);
+  if (level > -1) 
+    cprintf("deleted|[%d]%d\n", curproc->pid, level);
+  acquire(&ptable.lock);
   sched();
   panic("zombie exit");
 }
@@ -569,10 +577,7 @@ scheduler(void)
 
           for (int k = 0; k <= highest_idx; k++) {
             pp = &ptable.proc[k];
-            if (pp->state == UNUSED) {
-            }
-            // cprintf("[%d]---:0,", k);
-            else
+            if (pp->state == RUNNING || pp->state == RUNNABLE) 
               cprintf("[%d]%s%s:%d:%d(%d)(%d)(%d),", 
                 k, (pp->state == RUNNING) ? "*" : " ", 
                 pp->name, pp->state, pp->nice, pp->max_skiplist_level - 1, 
@@ -708,7 +713,7 @@ wakeup1(void *chan)
   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++)
     if(p->state == SLEEPING && p->chan == chan) {
       p->state = RUNNABLE;
-      insert(&ptable, p); //from sleeping to runnable? have to insert that
+      insert(&ptable, p);
     }
 }
 
