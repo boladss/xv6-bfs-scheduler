@@ -35,6 +35,10 @@ extern void trapret(void);
 static void wakeup1(void *chan);
 
 // SKIP LIST FUNCTIONS
+static int computevd(int nice_value) {
+  return (nice_value + NICE_FIRST_LEVEL + 1) * BFS_DEFAULT_QUANTUM;
+}
+
 static int delete(struct ptable *ptable, struct proc *proc) {
   const int curr_deadline = proc->virt_deadline;
   struct node *placement[LEVELS];
@@ -381,7 +385,7 @@ nicefork(int nice_value)
   np->nice = nice_value;   // VERIFY: Should this be added earlier?
 
   // computes virtual deadline based on niceness and quantum
-  np->virt_deadline = ticks + VIRT_DEADLINE(nice_value); 
+  np->virt_deadline = ticks + computevd(nice_value); 
   // check if can add anonymous function in bfs.h or in c
   acquire(&ptable.lock);
 
@@ -638,7 +642,7 @@ yield(void)
 
   //need to recompute virt deadline
   delete(&ptable, p);
-  p->virt_deadline = ticks + VIRT_DEADLINE(p->nice);
+  p->virt_deadline = ticks + computevd(p->nice);
   level = insert(&ptable, p);
   sched();
   release(&ptable.lock);
