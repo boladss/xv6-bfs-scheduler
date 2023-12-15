@@ -190,10 +190,11 @@ UPROGS=\
 	_wc\
 	_zombie\
 			_shutdown\
-	_loop\
-	_schedlog_test\
-	_nicefork_test\
 	_test\
+	_loop\
+	_schedlogtest\
+	_niceforktest\
+	_niceforktest2\
 
 fs.img: mkfs README $(UPROGS)
 	./mkfs fs.img README $(UPROGS)
