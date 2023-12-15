@@ -355,6 +355,11 @@ growproc(int n)
 int
 nicefork(int nice_value)
 {
+  // Check if nice value is valid
+  if (nice_value < NICE_FIRST_LEVEL || nice_value > NICE_LAST_LEVEL) {
+    panic("invalid nice value");
+  }
+
   int i, pid;
   struct proc *np;
   struct proc *curproc = myproc();
