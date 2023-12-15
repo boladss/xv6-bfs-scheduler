@@ -547,7 +547,6 @@ scheduler(void)
       switchuvm(p);
       p->state = RUNNING;
       p->ticks_left = BFS_DEFAULT_QUANTUM; // ticks_left implementation
-      // p->ticks_done = 0;                    // ticks_done implementation
 
       // Print schedlog details
       if (schedlog_active) {

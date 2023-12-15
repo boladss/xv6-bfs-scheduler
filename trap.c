@@ -108,11 +108,6 @@ trap(struct trapframe *tf)
       yield();
     }
 
-    // ticks_done implementation
-    // if(--myproc()->ticks_done == BFS_DEFAULT_QUANTUM) {
-    //   yield();
-    // }
-
   // Check if the process has been killed since we yielded
   if(myproc() && myproc()->killed && (tf->cs&3) == DPL_USER)
     exit();
