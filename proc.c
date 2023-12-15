@@ -324,7 +324,7 @@ userinit(void)
   int level = insert(&ptable, p); //needed to push pid 0: init into skiplist
 
   release(&ptable.lock);
-  cprintf("inserted|[%d]%d\n", p->pid, level - 1);
+  cprintf("inserted|[%d]%d\n", p->pid, level);
 }
 
 // Grow current process's memory by n bytes.
@@ -405,7 +405,7 @@ nicefork(int nice_value)
   int level = insert(&ptable, np); //needed to push new processes into skiplist
 
   release(&ptable.lock);
-  cprintf("inserted|[%d]%d\n", np->pid, level - 1);
+  cprintf("inserted|[%d]%d\n", np->pid, level);
   
   return pid;
 }
@@ -443,7 +443,7 @@ exit(void)
   end_op();
   curproc->cwd = 0;
 
-  int level = -1;
+  int level = 0;
   acquire(&ptable.lock);
   if (curproc->state == RUNNING || curproc->state == RUNNABLE)
     level = delete(&ptable, curproc); //from running/runnable to zombie, can't be in the skip list
@@ -463,8 +463,8 @@ exit(void)
   // Jump into the scheduler, never to return.
   curproc->state = ZOMBIE;
   release(&ptable.lock);
-  if (level > -1) 
-    cprintf("deleted|[%d]%d\n", curproc->pid, level - 1);
+  if (level > 0) 
+    cprintf("deleted|[%d]%d\n", curproc->pid, level);
   acquire(&ptable.lock);
   sched();
   panic("zombie exit");
@@ -572,8 +572,6 @@ scheduler(void)
             }
           }
 
-          // int temp_quantum = BFS_DEFAULT_QUANTUM;
-
           /*
           CLARIFICATIONS:
           Based on the example in the Project 1 specs, there's a few ambiguous
@@ -590,8 +588,8 @@ scheduler(void)
             pp = &ptable.proc[k];
             if (pp->state == RUNNING || pp->state == RUNNABLE) 
               cprintf("[%d]%s%s:%d:%d(%d)(%d)(%d),", 
-                k, (pp->state == RUNNING) ? "*" : " ", 
-                pp->name, pp->state, pp->nice, pp->max_skiplist_level - 1, 
+                pp->pid, (pp->state == RUNNING) ? "*" : " ", 
+                pp->name, pp->state, pp->nice, pp->max_skiplist_level, 
                 pp->virt_deadline, pp->ticks_left);
           }
           cprintf("\n");
