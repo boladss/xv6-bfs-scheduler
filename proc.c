@@ -18,7 +18,10 @@ struct node {
 // so no point having it in the header
 
 // GLOBALS
-static unsigned int seed = SEED;
+static unsigned int seed = SEED;    // Used in random()
+
+int schedlog_active = 0;            // Used in schedlog printing
+int schedlog_lasttick = 0;
 
 struct ptable {
   struct spinlock lock;
@@ -345,7 +348,10 @@ growproc(int n)
   return 0;
 }
 
-
+// Create a new process copying p as the parent.
+// Sets up stack to return as if from system call.
+// Caller must set state of returned proc to RUNNABLE.
+// Sets nice_value of process given input.
 int
 nicefork(int nice_value)
 {
@@ -382,11 +388,12 @@ nicefork(int nice_value)
 
   pid = np->pid;
 
-  np->nice = nice_value;   // VERIFY: Should this be added earlier?
+  // sets nice value of process
+  np->nice = nice_value;
 
   // computes virtual deadline based on niceness and quantum
   np->virt_deadline = ticks + computevd(nice_value); 
-  // check if can add anonymous function in bfs.h or in c
+  
   acquire(&ptable.lock);
 
   np->state = RUNNABLE;
@@ -398,9 +405,7 @@ nicefork(int nice_value)
   return pid;
 }
 
-// Create a new process copying p as the parent.
-// Sets up stack to return as if from system call.
-// Caller must set state of returned proc to RUNNABLE.
+// Preserve existing functionality of fork(), uses default nice value = 0.
 int
 fork(void)
 {
@@ -454,7 +459,7 @@ exit(void)
   curproc->state = ZOMBIE;
   release(&ptable.lock);
   if (level > -1) 
-    cprintf("deleted|[%d]%d\n", curproc->pid, level);
+    cprintf("deleted|[%d]%d\n", curproc->pid, level - 1);
   acquire(&ptable.lock);
   sched();
   panic("zombie exit");
@@ -506,9 +511,6 @@ wait(void)
   }
 }
 
-// Add these declarations anywhere before the scheduler function
-int schedlog_active = 0;
-int schedlog_lasttick = 0;
 
 void schedlog(int n) {
   schedlog_active = 1;
