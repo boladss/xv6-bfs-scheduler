@@ -443,7 +443,7 @@ exit(void)
   end_op();
   curproc->cwd = 0;
 
-  int level = 0;
+  int level = -1;
   acquire(&ptable.lock);
   if (curproc->state == RUNNING || curproc->state == RUNNABLE)
     level = delete(&ptable, curproc); //from running/runnable to zombie, can't be in the skip list
@@ -463,7 +463,7 @@ exit(void)
   // Jump into the scheduler, never to return.
   curproc->state = ZOMBIE;
   release(&ptable.lock);
-  if (level > 0) 
+  if (level > -1) 
     cprintf("deleted|[%d]%d\n", curproc->pid, level);
   acquire(&ptable.lock);
   sched();
