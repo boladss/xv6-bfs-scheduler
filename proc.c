@@ -23,6 +23,8 @@ static unsigned int seed = SEED;    // Used in random()
 int schedlog_active = 0;            // Used in schedlog printing
 int schedlog_lasttick = 0;
 
+int ins_del_flag = 1;               // To hide skiplist insertion/deletion messages if necessary
+
 struct ptable {
   struct spinlock lock;
   struct node level[LEVELS][NPROC + 1];
@@ -324,7 +326,7 @@ userinit(void)
   int level = insert(&ptable, p); //needed to push pid 0: init into skiplist
 
   release(&ptable.lock);
-  cprintf("inserted|[%d]%d\n", p->pid, level);
+  if (ins_del_flag) cprintf("inserted|[%d]%d\n", p->pid, level);
 }
 
 // Grow current process's memory by n bytes.
@@ -405,7 +407,7 @@ nicefork(int nice_value)
   int level = insert(&ptable, np); //needed to push new processes into skiplist
 
   release(&ptable.lock);
-  cprintf("inserted|[%d]%d\n", np->pid, level);
+  if (ins_del_flag) cprintf("inserted|[%d]%d\n", np->pid, level);
   
   return pid;
 }
@@ -464,7 +466,7 @@ exit(void)
   curproc->state = ZOMBIE;
   release(&ptable.lock);
   if (level > -1) 
-    cprintf("deleted|[%d]%d\n", curproc->pid, level);
+    if (ins_del_flag) cprintf("deleted|[%d]%d\n", curproc->pid, level);
   acquire(&ptable.lock);
   sched();
   panic("zombie exit");
@@ -576,21 +578,26 @@ scheduler(void)
           CLARIFICATIONS:
           Based on the example in the Project 1 specs, there's a few ambiguous
           differences from Lab 5:
-          - Are unused processes not printed at all for the project? (as opposed
+          [X] Are unused processes not printed at all for the project? (as opposed
           to `[PID] ---:0`)
-          - Should there be an indicator for the current process running?
-          (marked with `*` in Lab 5)
-          - Does <quantum> refer to ticks left or ticks done?
-          - Other: maxlevel is not present in the example processes
+          [X] Does <quantum> refer to ticks left or ticks done?
+          [X] Other: maxlevel is not present in the example processes
+
+          [ ] Should there be an indicator for the current process running?
+              (marked with `*` in Lab 5)
+          [ ] Is max_level 0-indexed or 1-indexed?
+          
           */
 
           for (int k = 0; k <= highest_idx; k++) {
             pp = &ptable.proc[k];
-            if (pp->state == RUNNING || pp->state == RUNNABLE) 
-              cprintf("[%d]%s%s:%d:%d(%d)(%d)(%d),", 
-                pp->pid, (pp->state == RUNNING) ? "*" : " ", 
-                pp->name, pp->state, pp->nice, pp->max_skiplist_level, 
-                pp->virt_deadline, pp->ticks_left);
+            if (pp->state == UNUSED) cprintf("[-]---:0:-(-)(-)(-)");
+            else {
+              // [<pid>]<name>:<state>:<nice_level>(<max_level>)(<virtual_deadline>)(<quantum_left>)
+              cprintf("[%d]%s:%d:%d(%d)(%d)(%d),",
+                pp->pid, pp->name, pp->state, pp->nice,
+                pp->max_skiplist_level, pp->virt_deadline, pp->ticks_left);
+            }
           }
           cprintf("\n");
         }
@@ -640,7 +647,7 @@ yield(void)
 {
   struct proc * p = myproc();
   int level;
-  cprintf("deleted|[%d]%d\n", p->pid, p->max_skiplist_level);
+  if (ins_del_flag) cprintf("deleted|[%d]%d\n", p->pid, p->max_skiplist_level);
   acquire(&ptable.lock);  //DOC: yieldlock
   p->state = RUNNABLE; 
 
@@ -650,7 +657,7 @@ yield(void)
   level = insert(&ptable, p);
   sched();
   release(&ptable.lock);
-  cprintf("inserted|[%d]%d\n", p->pid, level);
+  if (ins_del_flag) cprintf("inserted|[%d]%d\n", p->pid, level);
 }
 
 // A fork child's very first scheduling by scheduler()
