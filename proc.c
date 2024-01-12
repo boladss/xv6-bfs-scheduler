@@ -106,7 +106,7 @@ static int delete(struct ptable *ptable, struct proc *proc) {
     temp->lower = 0; //then deallocate
   } while (curr != 0);
   level = proc->max_skiplist_level;
-  proc->max_skiplist_level = 0; //unnecessary for the spec, but good for clarity (when is a process not in the skiplist)
+  proc->max_skiplist_level = -1; // absent from skiplist now shows level = -1, as per updated specs
   return level;
 }
 
@@ -449,6 +449,7 @@ exit(void)
   acquire(&ptable.lock);
   if (curproc->state == RUNNING || curproc->state == RUNNABLE)
     level = delete(&ptable, curproc); //from running/runnable to zombie, can't be in the skip list
+                                      // note that delete returns the level PRIOR to deletion, actual current level is now -1
 
   // Parent might be sleeping in wait().
   wakeup1(curproc->parent);

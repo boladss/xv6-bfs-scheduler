@@ -54,13 +54,14 @@ printint(int xx, int base, int sign)
 void
 cprintf(char *fmt, ...)
 {
-  int i, c, locking;
+  int i, c;
+  // int locking;
   uint *argp;
   char *s;
 
-  locking = cons.locking;
-  if(locking)
-    acquire(&cons.lock);
+  // locking = cons.locking;
+  // if(locking)
+  //   acquire(&cons.lock);
 
   if (fmt == 0)
     panic("null fmt");
@@ -99,8 +100,8 @@ cprintf(char *fmt, ...)
     }
   }
 
-  if(locking)
-    release(&cons.lock);
+  // if(locking)
+  //   release(&cons.lock);
 }
 
 void
