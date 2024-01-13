@@ -45,6 +45,7 @@ static int computevd(int nice_value) {
 }
 
 static int delete(struct ptable *ptable, struct proc *proc) {
+  if (ins_del_flag) cprintf("deleted|[%d]%d\n", proc->pid, proc->max_skiplist_level);
   const int curr_deadline = proc->virt_deadline;
   struct node *placement[LEVELS];
   int level = LEVELS - 1;
@@ -110,7 +111,7 @@ static int delete(struct ptable *ptable, struct proc *proc) {
   return level;
 }
 
-static unsigned int random(uint max) {
+unsigned int random(uint max) {
   seed ^= seed << 17;
   seed ^= seed >> 7;
   seed ^= seed << 5;
@@ -175,6 +176,7 @@ static int insert(struct ptable *ptable, struct proc *proc) {
     lower = node;
   }
   proc->max_skiplist_level = level; //escaped the for loop? congrats, that's the max level
+  if (ins_del_flag) cprintf("inserted|[%d]%d\n", proc->pid, level);
   return level;
 }
 
@@ -323,10 +325,9 @@ userinit(void)
   acquire(&ptable.lock);
 
   p->state = RUNNABLE;
-  int level = insert(&ptable, p); //needed to push pid 0: init into skiplist
+  insert(&ptable, p); //needed to push pid 0: init into skiplist
 
   release(&ptable.lock);
-  if (ins_del_flag) cprintf("inserted|[%d]%d\n", p->pid, level);
 }
 
 // Grow current process's memory by n bytes.
@@ -404,10 +405,9 @@ nicefork(int nice_value)
   acquire(&ptable.lock);
 
   np->state = RUNNABLE;
-  int level = insert(&ptable, np); //needed to push new processes into skiplist
+  insert(&ptable, np); //needed to push new processes into skiplist
 
   release(&ptable.lock);
-  if (ins_del_flag) cprintf("inserted|[%d]%d\n", np->pid, level);
   
   return pid;
 }
@@ -445,10 +445,9 @@ exit(void)
   end_op();
   curproc->cwd = 0;
 
-  int level = -1;
   acquire(&ptable.lock);
   if (curproc->state == RUNNING || curproc->state == RUNNABLE)
-    level = delete(&ptable, curproc); //from running/runnable to zombie, can't be in the skip list
+    delete(&ptable, curproc); //from running/runnable to zombie, can't be in the skip list
                                       // note that delete returns the level PRIOR to deletion, actual current level is now -1
 
   // Parent might be sleeping in wait().
@@ -466,8 +465,6 @@ exit(void)
   // Jump into the scheduler, never to return.
   curproc->state = ZOMBIE;
   release(&ptable.lock);
-  if (level > -1) 
-    if (ins_del_flag) cprintf("deleted|[%d]%d\n", curproc->pid, level);
   acquire(&ptable.lock);
   sched();
   panic("zombie exit");
@@ -637,7 +634,6 @@ sched(void)
   if(readeflags()&FL_IF)
     panic("sched interruptible");
   intena = mycpu()->intena;
-  //cprintf("switching from %s to scheduler\n", p->name);
   swtch(&p->context, mycpu()->scheduler);
   mycpu()->intena = intena;
 }
@@ -647,18 +643,15 @@ void
 yield(void)
 {
   struct proc * p = myproc();
-  int level;
-  if (ins_del_flag) cprintf("deleted|[%d]%d\n", p->pid, p->max_skiplist_level);
   acquire(&ptable.lock);  //DOC: yieldlock
   p->state = RUNNABLE; 
 
   //need to recompute virt deadline
   delete(&ptable, p);
   p->virt_deadline = ticks + computevd(p->nice);
-  level = insert(&ptable, p);
+  insert(&ptable, p);
   sched();
   release(&ptable.lock);
-  if (ins_del_flag) cprintf("inserted|[%d]%d\n", p->pid, level);
 }
 
 // A fork child's very first scheduling by scheduler()
@@ -765,7 +758,6 @@ kill(int pid)
         insert(&ptable, p); //from sleeping to runnable? have to insert that
       }
       release(&ptable.lock);
-      cprintf("killed PID %d: %s\n", p->pid, p->name);
       return 0;
     }
   }
