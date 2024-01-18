@@ -572,20 +572,6 @@ scheduler(void)
             }
           }
 
-          /*
-          CLARIFICATIONS:
-          Based on the example in the Project 1 specs, there's a few ambiguous
-          differences from Lab 5:
-          [X] Are unused processes not printed at all for the project? (as opposed
-          to `[PID] ---:0`)
-          [X] Does <quantum> refer to ticks left or ticks done?
-          [X] Other: maxlevel is not present in the example processes
-
-          [ ] Should there be an indicator for the current process running?
-              (marked with `*` in Lab 5)
-          [ ] Is max_level 0-indexed or 1-indexed?
-          
-          */
 
           for (int k = 0; k <= highest_idx; k++) {
             pp = &ptable.proc[k];
