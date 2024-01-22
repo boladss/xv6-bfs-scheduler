@@ -40,12 +40,12 @@ extern void trapret(void);
 static void wakeup1(void *chan);
 
 // SKIP LIST FUNCTIONS
-static int computevd(int nice_value) {
-  return (nice_value + NICE_FIRST_LEVEL + 1) * BFS_DEFAULT_QUANTUM;
+static int computevd(int nice_value, int curr_ticks) {
+  return curr_ticks + ((nice_value - NICE_FIRST_LEVEL + 1) * BFS_DEFAULT_QUANTUM);
 }
 
 static int delete(struct ptable *ptable, struct proc *proc) {
-  if (ins_del_flag) cprintf("deleted|[%d]%d\n", proc->pid, proc->max_skiplist_level);
+  if (ins_del_flag) cprintf("removed|[%d]%d\n", proc->pid, proc->max_skiplist_level);
   const int curr_deadline = proc->virt_deadline;
   struct node *placement[LEVELS];
   int level = LEVELS - 1;
@@ -313,7 +313,9 @@ userinit(void)
   p->tf->eflags = FL_IF;
   p->tf->esp = PGSIZE;
   p->tf->eip = 0;  // beginning of initcode.S
-  //no reason to set virtual deadline or nice value for init.
+  //set init to have the default nice value of 0
+  p->nice = 0;
+  p->virt_deadline = computevd(0, ticks);
 
   safestrcpy(p->name, "initcode", sizeof(p->name));
   p->cwd = namei("/");
@@ -400,7 +402,7 @@ nicefork(int nice_value)
   np->nice = nice_value;
 
   // computes virtual deadline based on niceness and quantum
-  np->virt_deadline = ticks + computevd(nice_value); 
+  np->virt_deadline = computevd(nice_value, ticks); 
   
   acquire(&ptable.lock);
 
@@ -578,10 +580,11 @@ scheduler(void)
             if (pp->state == UNUSED) cprintf("[-]---:0:-(-)(-)(-)");
             else {
               // [<pid>]<name>:<state>:<nice_level>(<max_level>)(<virtual_deadline>)(<quantum_left>)
-              cprintf("[%d]%s:%d:%d(%d)(%d)(%d),",
+              cprintf("[%d]%s:%d:%d(%d)(%d)(%d)",
                 pp->pid, pp->name, pp->state, pp->nice,
                 pp->max_skiplist_level, pp->virt_deadline, pp->ticks_left);
             }
+            if (k != highest_idx) cprintf(",");
           }
           cprintf("\n");
         }
@@ -634,7 +637,7 @@ yield(void)
 
   //need to recompute virt deadline
   delete(&ptable, p);
-  p->virt_deadline = ticks + computevd(p->nice);
+  p->virt_deadline = computevd(p->nice, ticks);
   insert(&ptable, p);
   sched();
   release(&ptable.lock);
